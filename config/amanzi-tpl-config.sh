@@ -182,7 +182,7 @@ MOAB_VERSION=r4276
 #
 BUILD_TRILINOS=0
 TRILINOS_PREFIX=${PREFIX}
-TRILINOS_VERSION=10.6.4
+TRILINOS_VERSION=12.14.1
 
 ################################################################################
 #
@@ -481,7 +481,7 @@ function build_boost {
 	tar ${TAR_FLAGS} ${DOWNLOAD_DIRECTORY}/boost_${file_version}.tar.gz -C ${PREFIX}/boost
 
 	cd $BOOST_DIR
-	./bootstrap.sh --prefix=${PREFIX}
+	./bootstrap.sh --prefix=${PREFIX} --with-toolset=${Boost_toolset}
 	echo Boost bootstrap complete
 	./bjam --prefix=$PREFIX install
 
