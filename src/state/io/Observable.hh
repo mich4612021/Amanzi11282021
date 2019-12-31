@@ -32,6 +32,8 @@ Observable data object
 #include "MeshDefs.hh"
 #include "ObservationData.hh"
 
+#include <fstream>
+
 namespace Amanzi {
 
 class State;

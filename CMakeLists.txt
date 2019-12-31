@@ -12,6 +12,7 @@ cmake_minimum_required(VERSION 3.6.1)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #set(CMAKE_CXX_EXTENSIONS OFF)
+set(SPACK_BUILD OFF) 
 
 # Enable testing, ctest needs this
 # all add_test commands are ignored unless this is called!
@@ -43,6 +44,11 @@ set(CMAKE_MODULE_PATH
     ${AMANZI_MODULE_PATH}/Modules
     ${AMANZI_MODULE_PATH}/Utils)
 
+if (SPACKAGE_BUILD)
+  set(MSTK_VERSION ON)
+  set(MSTK_VERSION_MAJOR 3) 
+  set(MSTK_VERSION_MINOR 0)
+endif()
 # Code version defined
 include(AmanziVersion)
 

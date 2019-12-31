@@ -65,5 +65,13 @@ operator<<(Message& message, unsigned datum)
   return message;
 }
 
+Message&
+operator<<(Message& message, long int datum)
+{
+  char number[24];
+  snprintf(number, 23, "%ld", datum);
+  message.add_data(number);
+  return message;
+}
 
 } // namespace Errors

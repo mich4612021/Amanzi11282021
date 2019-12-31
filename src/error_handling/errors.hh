@@ -47,6 +47,8 @@ Message&
 operator<<(Message& message, unsigned datum);
 Message&
 operator<<(Message& message, unsigned long datum);
+Message&
+operator<<(Message& message, long int datum);
 
 class CutTimeStep : public Exceptions::Amanzi_exception {};
 

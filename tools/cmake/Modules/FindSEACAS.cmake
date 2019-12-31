@@ -31,7 +31,8 @@ include(AddPackageDependency)
 if (SEACAS_LIBRARIES AND SEACAS_INCLUDE_DIRS)
 
   # Do nothing. Variables are set. No need to search again
-
+  set(SEACAS_INCLUDE_DIR ${SEACAS_INCLUDE_DIRS})
+  set(SEACAS_LIBRARY    ${SEACAS_LIBRARIES})
 else()
 
   # Cache variables
@@ -48,7 +49,8 @@ else()
   endif()
 
   # Search for ExodusII include files
-  set(exodus_inc_names "exodusII.h")
+  set(exodus_inc_names "SEACASIoss_config.h") 
+  #set(exodus_inc_names "exodusII.h")
   if (SEACAS_INCLUDE_DIR)
     if (EXISTS "${SEACAS_INCLUDE_DIR}")
 
@@ -187,7 +189,7 @@ endif(SEACAS_LIBRARIES AND SEACAS_INCLUDE_DIRS )
 
 # Send useful message if everything is found
 find_package_handle_standard_args(SEACAS DEFAULT_MSG
-                                  SEACAS_INCLUDE_DIR
+                                  SEACAS_INCLUDE_DIRS
                                   SEACAS_LIBRARIES)
 
 # find_package should set SEACAS_FOUND but it does not!

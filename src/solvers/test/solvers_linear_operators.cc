@@ -27,6 +27,8 @@
 // #include "LinearOperatorBelosGMRES.hh"
 // #include "LinearOperatorAmesos.hh"
 
+#include <Tpetra_CrsMatrix_decl.hpp>
+
 using namespace Amanzi;
 
 SUITE(SOLVERS)
