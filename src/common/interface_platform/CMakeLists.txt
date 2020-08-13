@@ -19,6 +19,7 @@ include(PrintVariable)
 project(PLATFORM_INTERFACE)
 
 # Amanzi include directories
+include_directories(${AMANZI_BINARY_DIR}) # required to pick up amanzi_version.hh
 include_directories(${DBC_SOURCE_DIR})
 include_directories(${ATK_SOURCE_DIR})
 include_directories(${GEOMETRY_SOURCE_DIR})
@@ -45,6 +46,7 @@ set(interface_src_files  InputConverter.cc InputConverterU.cc
                          InputConverterU_State.cc InputConverterU_MPC.cc InputConverterU_PK.cc
                          InputConverterU_Flow.cc InputConverterU_Transport.cc
                          InputConverterU_Energy.cc InputConverterU_Chemistry.cc
+                         InputConverterU_ShallowWater.cc
                          InputConverterU_Solvers.cc InputConverterU_Mesh.cc
                          InputConverterU_Output.cc)
 

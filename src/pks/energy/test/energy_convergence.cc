@@ -100,8 +100,10 @@ TEST(ENERGY_CONVERGENCE) {
   std::vector<double> h, error;
 
   int nx(20);
-  double dt(0.02);
+  double dt(0.04);
   for (int n = 0; n < nmeshes; n++, nx *= 2) {
+    dt /= 2.0;
+
     Teuchos::ParameterList region_list = plist->get<Teuchos::ParameterList>("regions");
     Teuchos::RCP<Amanzi::AmanziGeometry::GeometricModel> gm =
         Teuchos::rcp(new Amanzi::AmanziGeometry::GeometricModel(2, region_list, *comm));
@@ -109,7 +111,6 @@ TEST(ENERGY_CONVERGENCE) {
     Preference pref;
     pref.clear();
     pref.push_back(Framework::MSTK);
-    pref.push_back(Framework::STK);
 
     MeshFactory meshfactory(comm,gm);
     meshfactory.set_preference(pref);
@@ -130,13 +131,14 @@ TEST(ENERGY_CONVERGENCE) {
     Teuchos::RCP<State> S = Teuchos::rcp(new State(state_list));
     S->RegisterDomainMesh(Teuchos::rcp_const_cast<Mesh>(mesh));
 
-    Teuchos::ParameterList pk_tree;
+    Teuchos::ParameterList pk_tree = plist->sublist("PKs").sublist("energy");
     Teuchos::RCP<TreeVector> soln = Teuchos::rcp(new TreeVector());
     Teuchos::RCP<EnergyOnePhase_PK> EPK = Teuchos::rcp(new EnergyOnePhase_PK(pk_tree, plist, S, soln));
 
     // overwrite enthalpy with a different model
     Teuchos::ParameterList ev_list;
-    Teuchos::RCP<TestEnthalpyEvaluator> enthalpy = Teuchos::rcp(new TestEnthalpyEvaluator(ev_list));
+    S->RequireField("enthalpy")->SetMesh(mesh)->SetGhosted()->AddComponent("cell", AmanziMesh::CELL, 1);
+    auto enthalpy = Teuchos::rcp(new TestEnthalpyEvaluator(ev_list));
     S->SetFieldEvaluator("enthalpy", enthalpy);
 
     EPK->Setup(S.ptr());
@@ -184,7 +186,7 @@ TEST(ENERGY_CONVERGENCE) {
     h.push_back(1.0 / nx);
     error.push_back(l2_err);
 
-    printf("mesh=%d bdf1_steps=%d  L2_temp_err=%7.3e L2_temp=%7.3e\n", n, itrs, l2_err, l2_norm);
+    printf("mesh=%d bdf1_steps=%3d  L2_temp_err=%7.3e L2_temp=%7.3e\n", n, itrs, l2_err, l2_norm);
     CHECK(l2_err < 8e-1);
 
     // save solution
@@ -197,9 +199,7 @@ TEST(ENERGY_CONVERGENCE) {
   // check convergence rate
   double l2_rate = Amanzi::Utils::bestLSfit(h, error);
   printf("convergence rate: %10.2f\n", l2_rate);
-  CHECK(l2_rate > 0.84);
-
-  
+  CHECK(l2_rate > 0.81);
 }
 
 
@@ -215,13 +215,11 @@ TEST(ENERGY_PRECONDITIONER) {
   int num_itrs[2];
   for (int loop = 0; loop < 2; loop++) {
     Teuchos::ParameterList region_list = plist->get<Teuchos::ParameterList>("regions");
-    Teuchos::RCP<Amanzi::AmanziGeometry::GeometricModel> gm =
-        Teuchos::rcp(new Amanzi::AmanziGeometry::GeometricModel(2, region_list, *comm));
+    auto gm = Teuchos::rcp(new Amanzi::AmanziGeometry::GeometricModel(2, region_list, *comm));
     
     Preference pref;
     pref.clear();
     pref.push_back(Framework::MSTK);
-    pref.push_back(Framework::STK);
 
     MeshFactory meshfactory(comm,gm);
     meshfactory.set_preference(pref);
@@ -234,13 +232,14 @@ TEST(ENERGY_PRECONDITIONER) {
     Teuchos::RCP<State> S = Teuchos::rcp(new State(state_list));
     S->RegisterDomainMesh(Teuchos::rcp_const_cast<Mesh>(mesh));
 
-    Teuchos::ParameterList pk_tree;
+    Teuchos::ParameterList pk_tree = plist->sublist("PKs").sublist("energy");
     Teuchos::RCP<TreeVector> soln = Teuchos::rcp(new TreeVector());
     Teuchos::RCP<EnergyOnePhase_PK> EPK = Teuchos::rcp(new EnergyOnePhase_PK(pk_tree, plist, S, soln));
 
     // overwrite enthalpy with a different model
     Teuchos::ParameterList ev_list;
-    Teuchos::RCP<TestEnthalpyEvaluator> enthalpy = Teuchos::rcp(new TestEnthalpyEvaluator(ev_list));
+    S->RequireField("enthalpy")->SetMesh(mesh)->SetGhosted()->AddComponent("cell", AmanziMesh::CELL, 1);
+    auto enthalpy = Teuchos::rcp(new TestEnthalpyEvaluator(ev_list));
     S->SetFieldEvaluator("enthalpy", enthalpy);
 
     EPK->Setup(S.ptr());
@@ -279,11 +278,9 @@ TEST(ENERGY_PRECONDITIONER) {
     EPK->CommitStep(0.0, 1.0, S);
     num_itrs[loop] = EPK->bdf1_dae()->number_nonlinear_steps();
     printf("number of nonlinear steps: %d\n", num_itrs[loop]);
-    plist->sublist("PKs").sublist("energy").sublist("One-phase problem")
-          .sublist("operators").set<bool>("include enthalpy in preconditioner", false);
+    plist->sublist("PKs").sublist("energy").sublist("operators")
+        .set<bool>("include enthalpy in preconditioner", false);
   }
   CHECK(num_itrs[1] > num_itrs[0]);
-
-  
 }
 

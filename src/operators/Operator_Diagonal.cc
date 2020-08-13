@@ -31,8 +31,8 @@ namespace Operators {
 int Operator_Diagonal::ApplyMatrixFreeOp(
     const Op_Diagonal& op, const CompositeVector& X, CompositeVector& Y) const
 {
-  const Epetra_MultiVector& Xi = *X.ViewComponent(row_compname_, true);
-  Epetra_MultiVector& Yi = *Y.ViewComponent(col_compname_, true);
+  const Epetra_MultiVector& Xi = *X.ViewComponent(op.col_compname(), true);
+  Epetra_MultiVector& Yi = *Y.ViewComponent(op.row_compname(), true);
  
   const auto& col_lids = op.col_inds();
   const auto& row_lids = op.row_inds();
@@ -60,14 +60,13 @@ int Operator_Diagonal::ApplyMatrixFreeOp(
 
 /* ******************************************************************
 * Visit methods for symbolic assemble.
-* Apply the local matrices directly as schemas match.
 ****************************************************************** */
 void Operator_Diagonal::SymbolicAssembleMatrixOp(
     const Op_Diagonal& op, const SuperMap& map, GraphFE& graph,
     int my_block_row, int my_block_col) const
 {
-  const std::vector<int>& row_gids = map.GhostIndices(my_block_row, row_compname_, 0);
-  const std::vector<int>& col_gids = map.GhostIndices(my_block_col, col_compname_, 0);
+  const std::vector<int>& row_gids = map.GhostIndices(my_block_row, op.row_compname(), 0);
+  const std::vector<int>& col_gids = map.GhostIndices(my_block_col, op.col_compname(), 0);
 
   const auto& col_lids = op.col_inds();
   const auto& row_lids = op.row_inds();
@@ -93,14 +92,13 @@ void Operator_Diagonal::SymbolicAssembleMatrixOp(
 
 /* ******************************************************************
 * Visit methods for assemble
-* Apply the local matrices directly as schemas match.
 ****************************************************************** */
 void Operator_Diagonal::AssembleMatrixOp(
     const Op_Diagonal& op, const SuperMap& map, MatrixFE& mat,
     int my_block_row, int my_block_col) const
 {
-  const std::vector<int>& row_gids = map.GhostIndices(my_block_row, row_compname_, 0);
-  const std::vector<int>& col_gids = map.GhostIndices(my_block_col, col_compname_, 0);
+  const std::vector<int>& row_gids = map.GhostIndices(my_block_row, op.row_compname(), 0);
+  const std::vector<int>& col_gids = map.GhostIndices(my_block_col, op.col_compname(), 0);
 
   const auto& col_lids = op.col_inds();
   const auto& row_lids = op.row_inds();
@@ -122,6 +120,14 @@ void Operator_Diagonal::AssembleMatrixOp(
     ierr |= mat.SumIntoMyValues(lid_r.data(), lid_c.data(), op.matrices[n]);
   }
   AMANZI_ASSERT(!ierr);
+}
+
+
+/* ******************************************************************
+* Copy constructor.
+****************************************************************** */
+Teuchos::RCP<Operator> Operator_Diagonal::Clone() const {
+  return Teuchos::rcp(new Operator_Diagonal(*this));
 }
 
 }  // namespace Operators

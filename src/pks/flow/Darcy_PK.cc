@@ -17,6 +17,7 @@
 #include "Epetra_Vector.h"
 
 // Amanzi
+#include "constant_variable_field_evaluator.hh"
 #include "errors.hh"
 #include "exceptions.hh"
 #include "LinearOperatorFactory.hh"
@@ -56,8 +57,7 @@ Darcy_PK::Darcy_PK(Teuchos::ParameterList& pk_tree,
 
   // We need the flow list
   Teuchos::RCP<Teuchos::ParameterList> pk_list = Teuchos::sublist(glist, "PKs", true);
-  Teuchos::RCP<Teuchos::ParameterList> flow_list = Teuchos::sublist(pk_list, pk_name, true);
-  fp_list_ = Teuchos::sublist(flow_list, "Darcy problem", true);
+  fp_list_ = Teuchos::sublist(pk_list, pk_name, true);
 
   // We also need miscaleneous sublists
   preconditioner_list_ = Teuchos::sublist(glist, "preconditioners", true);
@@ -65,7 +65,7 @@ Darcy_PK::Darcy_PK(Teuchos::ParameterList& pk_tree,
   ti_list_ = Teuchos::sublist(fp_list_, "time integrator", true);
 
   // computational domain
-  domain_ = flow_list->template get<std::string>("domain name", "domain");
+  domain_ = fp_list_->template get<std::string>("domain name", "domain");
 }
 
 
@@ -83,8 +83,7 @@ Darcy_PK::Darcy_PK(const Teuchos::RCP<Teuchos::ParameterList>& glist,
 
   // We need the flow list
   Teuchos::RCP<Teuchos::ParameterList> pk_list = Teuchos::sublist(glist, "PKs", true);
-  Teuchos::RCP<Teuchos::ParameterList> flow_list = Teuchos::sublist(pk_list, pk_list_name, true);
-  fp_list_ = Teuchos::sublist(flow_list, "Darcy problem", true);
+  fp_list_ = Teuchos::sublist(pk_list, pk_list_name, true);
 
   // We also need miscaleneous sublists
   preconditioner_list_ = Teuchos::sublist(glist, "preconditioners", true);
@@ -92,7 +91,7 @@ Darcy_PK::Darcy_PK(const Teuchos::RCP<Teuchos::ParameterList>& glist,
   ti_list_ = Teuchos::sublist(fp_list_, "time integrator", true);
 
   // domain name
-  domain_ = flow_list->template get<std::string>("domain name", "domain");
+  domain_ = fp_list_->template get<std::string>("domain name", "domain");
 }
 
 
@@ -175,6 +174,11 @@ void Darcy_PK::Setup(const Teuchos::Ptr<State>& S)
 
     S->RequireField(pressure_key_, passwd_)->SetMesh(mesh_)->SetGhosted(true)
       ->SetComponents(names, locations, ndofs);
+
+    Teuchos::ParameterList elist;
+    elist.set<std::string>("evaluator name", pressure_key_);
+    auto eval = Teuchos::rcp(new PrimaryVariableFieldEvaluator(elist));
+    S->SetFieldEvaluator(pressure_key_, eval);
   }
 
   // require additional fields for this PK
@@ -189,8 +193,13 @@ void Darcy_PK::Setup(const Teuchos::Ptr<State>& S)
   }
 
   if (!S->HasField(saturation_liquid_key_)) {
-    S->RequireField(saturation_liquid_key_, passwd_)->SetMesh(mesh_)->SetGhosted(true)
+    S->RequireField(saturation_liquid_key_, saturation_liquid_key_)->SetMesh(mesh_)->SetGhosted(true)
       ->SetComponent("cell", AmanziMesh::CELL, 1);
+
+    Teuchos::ParameterList elist;
+    elist.set<std::string>("evaluator name", saturation_liquid_key_);
+    auto eval = Teuchos::rcp(new ConstantVariableFieldEvaluator(elist));
+    S->SetFieldEvaluator(saturation_liquid_key_, eval);
   }
 
   if (!S->HasField(prev_saturation_liquid_key_)) {
@@ -315,7 +324,10 @@ void Darcy_PK::Initialize(const Teuchos::Ptr<State>& S)
   // Create verbosity object to print out initialization statisticsr.,
   Teuchos::ParameterList vlist;
   vlist.sublist("verbose object") = fp_list_->sublist("verbose object");
-  vo_ = Teuchos::rcp(new VerboseObject("DarcyPK-" + domain_, vlist)); 
+
+  std::string ioname = "DarcyPK";
+  if (domain_ != "domain") ioname += "-" + domain_;
+  vo_ = Teuchos::rcp(new VerboseObject(ioname, vlist)); 
 
   // Initilize various base class data.
   Flow_PK::Initialize(S);
@@ -353,11 +365,14 @@ void Darcy_PK::Initialize(const Teuchos::Ptr<State>& S)
   // Initialize lambdas. It may be used by boundary conditions.
   CompositeVector& pressure = *S->GetFieldData(pressure_key_, passwd_);
 
-  if (pressure.HasComponent("face")) {
-    Epetra_MultiVector& p = *solution->ViewComponent("cell");
-    Epetra_MultiVector& lambda = *solution->ViewComponent("face");
+  if (ti_list_->isSublist("pressure-lambda constraints") && solution->HasComponent("face")) {
+    std::string method = ti_list_->sublist("pressure-lambda constraints").get<std::string>("method");
+    if (method == "projection") {
+      Epetra_MultiVector& p = *solution->ViewComponent("cell");
+      Epetra_MultiVector& lambda = *solution->ViewComponent("face");
 
-    DeriveFaceValuesFromCellValues(p, lambda);
+      DeriveFaceValuesFromCellValues(p, lambda);
+    }
   }
 
   // Create and initialize boundary conditions and source terms.
@@ -374,25 +389,27 @@ void Darcy_PK::Initialize(const Teuchos::Ptr<State>& S)
   if (flow_on_manifold_)
       oplist.set<std::string>("nonlinear coefficient", "standard: cell");
 
-  double factor = rho_ * rho_ / mu;
-  if (coupled_to_fracture_) factor = rho_;
-
-  Operators::PDE_DiffusionFactory opfactory;
-  op_diff_ = opfactory.Create(oplist, mesh_, op_bc_, factor, gravity_);
-  op_diff_->SetBCs(op_bc_, op_bc_);
+  Operators::PDE_DiffusionFactory opfactory(oplist, mesh_);
+  opfactory.SetConstantGravitationalTerm(gravity_, rho_);
 
   if (!flow_on_manifold_) {
     SetAbsolutePermeabilityTensor();
     Teuchos::RCP<std::vector<WhetStone::Tensor> > Kptr = Teuchos::rcpFromRef(K);
-    op_diff_->Setup(Kptr, Teuchos::null, Teuchos::null);
+    opfactory.SetVariableTensorCoefficient(Kptr);
+    opfactory.SetConstantScalarCoefficient(rho_ / mu);
   } else {
+    WhetStone::Tensor Ktmp(dim, 1);
+    Ktmp(0, 0) = rho_ / mu;
+    opfactory.SetConstantTensorCoefficient(Ktmp);
+
     S_->GetFieldEvaluator(permeability_key_)->HasFieldChanged(S_.ptr(), permeability_key_);
-    auto Kptr = S_->GetFieldData(permeability_key_);
-    op_diff_->Setup(Teuchos::null, Kptr, Teuchos::null);
+    auto kptr = S_->GetFieldData(permeability_key_);
+    opfactory.SetVariableScalarCoefficient(kptr);
   }
 
-  op_diff_->ScaleMassMatrices(rho_ / mu);
+  op_diff_ = opfactory.Create();
   op_diff_->UpdateMatrices(Teuchos::null, Teuchos::null);
+  op_diff_->SetBCs(op_bc_, op_bc_);
   op_ = op_diff_->global_operator();
 
   // -- accumulation operator.
@@ -479,7 +496,7 @@ void Darcy_PK::InitializeStatistics_(bool init_darcy)
     VV_PrintSourceExtrema();
 
     *vo_->os() << vo_->color("green") << "Initialization of PK is complete, T=" 
-               << S_->time() << " dT=" << dt_ << vo_->reset() << std::endl << std::endl;
+               << S_->time() << " dT=" << get_dt() << vo_->reset() << std::endl << std::endl;
   }
 }
 
@@ -686,6 +703,7 @@ void Darcy_PK::FractureConservationLaw_()
       if (ndofs > 1) g += Operators::UniqueIndexFaceToCells(*mesh_, f, c);
 
       flux_sum += fracture_flux[0][g] * dirs[i];
+      flux_max = std::max<double>(flux_max, std::fabs(fracture_flux[0][g]));
     }
 
     // sum into fluxes from matrix

@@ -126,19 +126,22 @@ void RunTest(int icase, double gravity) {
 
   // create diffusion operator
   double rho(1.0);
-  AmanziGeometry::Point g(0.0, 0.0, -gravity);
+  AmanziGeometry::Point gvec(0.0, 0.0, -gravity);
   Teuchos::ParameterList olist = plist->sublist("PK operator").sublist("diffusion operator");
   olist.set<bool>("gravity", (gravity > 0.0));
+  olist.set<double>("gravity magnitude", gravity);
 
-  Operators::PDE_DiffusionFactory opfactory;
-  Teuchos::RCP<Operators::PDE_Diffusion> op = opfactory.Create(olist, surfmesh, bc, rho, g);
+  Operators::PDE_DiffusionFactory opfactory(olist, surfmesh);
+  opfactory.SetVariableTensorCoefficient(K);
+  opfactory.SetConstantGravitationalTerm(gvec, rho);
+
+  Teuchos::RCP<Operators::PDE_Diffusion> op = opfactory.Create();
   op->SetBCs(bc, bc);
 
   Teuchos::RCP<Operator> global_op = op->global_operator();
   global_op->Init();
 
   // populate diffusion operator
-  op->Setup(K, Teuchos::null, Teuchos::null);
   op->UpdateMatrices(Teuchos::null, Teuchos::null);
 
   // apply BCs and assemble
@@ -158,7 +161,7 @@ void RunTest(int icase, double gravity) {
   solver.Init(lop_list);
 
   CompositeVector rhs = *global_op->rhs();
-  int ierr = solver.ApplyInverse(rhs, *solution);
+  solver.ApplyInverse(rhs, *solution);
 
   // post-processing
   auto cvs2 = Operators::CreateNonManifoldCVS(surfmesh);
@@ -209,7 +212,7 @@ void RunTest(int icase, double gravity) {
   if (gravity > 0.0) { 
     for (int c = 0; c < ncells_owned; c++) {
       const Point& xc = surfmesh->cell_centroid(c);
-      p[0][c] -= rho * g[2] * xc[2];
+      p[0][c] -= rho * gvec[2] * xc[2];
     }
   }
 

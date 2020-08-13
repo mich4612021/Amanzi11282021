@@ -9,8 +9,7 @@
 // Base mesh class for Amanzi
 //
 // Use the associated mesh factory to create an instance of a
-// derived class based on a particular mesh framework (like MSTK,
-// STKmesh etc.)
+// derived class based on a particular mesh framework (like MSTK, MOAB, etc)
 //
 // Design documentation:
 //
@@ -415,7 +414,6 @@ Mesh::cell_get_edges(const Entity_ID cellid,
 #if AMANZI_MESH_CACHE_VARS != 0
   if (!cell2edge_info_cached_) cache_cell2edge_info_();
 
-  Entity_ID_List &cedgeids = cell_edge_ids_[cellid];
   *edgeids = cell_edge_ids_[cellid]; // copy operation
 
 #else  // Non-cached version
@@ -717,7 +715,6 @@ Mesh::compute_face_geometry_(const Entity_ID faceid, double *area,
       for (int i = 0; i < cellids.size(); i++) {
         Entity_ID_List cellfaceids;
         std::vector<int> cellfacedirs;
-        int dir = 1;
 
         cell_get_faces_and_dirs(cellids[i], &cellfaceids, &cellfacedirs);
 
@@ -725,7 +722,6 @@ Mesh::compute_face_geometry_(const Entity_ID faceid, double *area,
         for (int j = 0; j < cellfaceids.size(); j++) {
           if (cellfaceids[j] == faceid) {
             found = true;
-            dir = cellfacedirs[j];
             break;
           }
         }
@@ -1374,12 +1370,9 @@ Mesh::build_columns(const std::string& setname) const
 
   // Allocate space and initialize.
   int nn = num_entities(NODE,Parallel_type::ALL);
-  int nf = num_entities(FACE,Parallel_type::ALL);
-  int nf_owned = num_entities(FACE,Parallel_type::OWNED);
   int nc = num_entities(CELL,Parallel_type::ALL);
-  int nc_owned = num_entities(CELL,Parallel_type::OWNED);
 
-  columnID_.resize(nc);
+  columnsID_.resize(nc);
   cell_cellbelow_.resize(nc);
   cell_cellbelow_.assign(nc,-1);
   cell_cellabove_.resize(nc);
@@ -1447,9 +1440,8 @@ Mesh::build_columns() const
   int nf = num_entities(FACE,Parallel_type::ALL);
   int nf_owned = num_entities(FACE,Parallel_type::OWNED);
   int nc = num_entities(CELL,Parallel_type::ALL);
-  int nc_owned = num_entities(CELL, Parallel_type::OWNED);
 
-  columnID_.resize(nc);
+  columnsID_.resize(nc);
   cell_cellbelow_.resize(nc);
   cell_cellbelow_.assign(nc,-1);
   cell_cellabove_.resize(nc);
@@ -1530,7 +1522,7 @@ Mesh::build_single_column_(int colnum, Entity_ID top_face) const
       break;
 
     }
-    columnID_[cur_cell] = colnum;
+    columnsID_[cur_cell] = colnum;
     colcells.push_back(cur_cell);
     colfaces.push_back(top_face);
 
@@ -1671,8 +1663,8 @@ Mesh::build_single_column_(int colnum, Entity_ID top_face) const
 
   if (success) {
     colfaces.push_back(bot_face);
-    column_cells_.push_back(colcells);
-    column_faces_.push_back(colfaces);
+    columns_cells_.push_back(colcells);
+    columns_faces_.push_back(colfaces);
   }
 
   return success;

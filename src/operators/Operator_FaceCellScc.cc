@@ -46,7 +46,7 @@ int Operator_FaceCellScc::ApplyInverse(const CompositeVector& X, CompositeVector
   Y.PutScalarGhosted(0.0);
 
   // apply preconditioner inversion
-  const Epetra_MultiVector& Xc = *X.ViewComponent("cell");
+  // const Epetra_MultiVector& Xc = *X.ViewComponent("cell");
   const Epetra_MultiVector& Xf = *X.ViewComponent("face", true);
 
   // Temporary cell and face vectors.
@@ -238,14 +238,11 @@ void Operator_FaceCellScc::AssembleMatrix(const SuperMap& map, MatrixFE& matrix,
       T.GatherGhostedToMaster();
 
       // -- populate the local matrices
-      int lid_r[2],lid_c[2],gid[2];
-      double a1, a2, values[2];
-      int ierr(0);
+      int gid[2];
+      double a1, a2;
 
       std::vector<WhetStone::DenseMatrix>& mats = schur_op->matrices;
 
-      const std::vector<int>& cell_row_inds = map.GhostIndices(my_block_row, "cell", 0);
-      const std::vector<int>& cell_col_inds = map.GhostIndices(my_block_col, "cell", 0);
       for (int f = 0; f < nfaces_owned; f++) {
         WhetStone::DenseMatrix& mat = mats[f];
 
@@ -253,8 +250,6 @@ void Operator_FaceCellScc::AssembleMatrix(const SuperMap& map, MatrixFE& matrix,
         int ncells = cells.size();
 
         for (int n=0; n!=ncells; ++n) {
-          lid_r[n] = cell_row_inds[cells[n]];
-          lid_c[n] = cell_col_inds[cells[n]];
           gid[n] = cmap_wghost.GID(cells[n]);
         }
 
@@ -377,6 +372,14 @@ void Operator_FaceCellScc::SymbolicAssembleMatrixOp(const Op_Cell_FaceCell& op,
   name = "Scc alt as CELL_CELL";
   Op_Cell_Cell diag_op(name, mesh_);
   Operator_Cell::SymbolicAssembleMatrixOp(diag_op, map, graph, my_block_row, my_block_col);
+}
+
+
+/* ******************************************************************
+* Copy constructor.
+****************************************************************** */
+Teuchos::RCP<Operator> Operator_FaceCellScc::Clone() const {
+  return Teuchos::rcp(new Operator_FaceCellScc(*this));
 }
 
 }  // namespace Operators

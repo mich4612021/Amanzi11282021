@@ -63,28 +63,6 @@ class PK_MPCAdditive :  public PK_MPC<PK> {
   virtual double get_dt();
   virtual void set_dt(double dt);
   virtual bool AdvanceStep(double t_old, double t_new, bool reinit = false);
-
-  // -- identifier accessor
-  std::string name() const { return name_; }
-
- protected:
-  // identifier
-  std::string name_;
-
-  // list of the PKs coupled by this MPC
-  typedef std::vector<Teuchos::RCP<PK_Base> > SubPKList;
-  SubPKList sub_pks_;
-
-  // single solution vector for the coupled problem
-  Teuchos::RCP<TreeVector> solution_;
-
-  // plists
-  Teuchos::RCP<Teuchos::ParameterList> global_list_;
-  Teuchos::RCP<Teuchos::ParameterList> my_list_;
-  Teuchos::ParameterList pk_tree_;
-
-  // states
-  Teuchos::RCP<State> S_;
 };
 
 
@@ -95,12 +73,13 @@ template <class PK_Base>
 PK_MPCAdditive<PK_Base>::PK_MPCAdditive(Teuchos::ParameterList& pk_tree,
                         const Teuchos::RCP<Teuchos::ParameterList>& global_list,
                         const Teuchos::RCP<State>& S,
-                        const Teuchos::RCP<TreeVector>& soln) :
-    pk_tree_(pk_tree),
-    global_list_(global_list),
-    S_(S),
-    solution_(soln)
+                        const Teuchos::RCP<TreeVector>& soln)
 {
+  pk_tree_ = pk_tree;
+  global_list_ = global_list;
+  S_ = S;
+  solution_ = soln;
+
   // name the PK
   name_ = pk_tree.name();
   auto found = name_.rfind("->");
@@ -125,24 +104,12 @@ PK_MPCAdditive<PK_Base>::PK_MPCAdditive(Teuchos::ParameterList& pk_tree,
   // loop over sub-PKs in the PK sublist, constructing the hierarchy recursively
   PKFactory pk_factory;
 
-  for (int i = 0; i < pk_name.size(); ++i) {
-    //const std::string& sub_name = sub->first;
-    const std::string& sub_name = pk_name[i];
-    if (!plist->isSublist(sub_name)) {
-      Errors::Message msg;
-      msg << "PK tree has no sublist \"" << sub_name << "\"";
-      Exceptions::amanzi_throw(msg);
-    }
-  }
-
   // Create only one subvector for all PKs
   Teuchos::RCP<TreeVector> pk_soln = Teuchos::rcp(new TreeVector());
   solution_->PushBack(pk_soln);
 
+  sub_pks_.clear();
   for (int i = 0; i < pk_name.size(); i++) {
-    // Collect arguments to the constructor
-    Teuchos::ParameterList& pk_sub_tree = pk_tree.sublist(pk_name[i]);
-
     // create the PK
     Teuchos::RCP<PK> pk_notype = pk_factory.CreatePK(pk_name[i], pk_tree, global_list, S, pk_soln);
     Teuchos::RCP<PK_Base> pk = Teuchos::rcp_dynamic_cast<PK_Base>(pk_notype);
@@ -213,7 +180,7 @@ double PK_MPCAdditive<PK_Base>::get_dt() {
 // -----------------------------------------------------------------------------
 template <class PK_Base>
 void PK_MPCAdditive<PK_Base>::set_dt(double dt_) {
-  double dt = 1.0e99;
+  // double dt = 1.0e99;
   for (PK_MPCAdditive<PK>::SubPKList::iterator pk = sub_pks_.begin();
        pk != sub_pks_.end(); ++pk) {
     (*pk)->set_dt(dt_);

@@ -18,6 +18,7 @@
 #include "Teuchos_Array.hpp"
 
 // Amanzi's
+#include "Key.hh"
 #include "VerboseObject.hh"
 
 #include "InputConverter.hh"
@@ -111,12 +112,16 @@ class InputConverterU : public InputConverter {
   Teuchos::ParameterList TranslateInitialization_(
       const std::string& unstr_controls);
 
+  // -- general
+  Teuchos::ParameterList TranslateSources_(
+      const std::string& domain, const std::string& pkname);
+
   // -- state
   void TranslateFieldEvaluator_(
-      DOMNode* node, std::string field, std::string unit,
+      DOMNode* node, const std::string& field, const std::string& unit,
       const std::string& reg_str, const std::vector<std::string>& regions,
       Teuchos::ParameterList& out_ic, Teuchos::ParameterList& out_ev,
-      std::string data_key = "value");
+      std::string data_key = "value", std::string domain = "domain");
   void TranslateFieldIC_(
       DOMNode* node, std::string field, std::string unit,
       const std::string& reg_str, const std::vector<std::string>& regions,
@@ -129,7 +134,6 @@ class InputConverterU : public InputConverter {
   Teuchos::ParameterList TranslatePOM_();
   Teuchos::ParameterList TranslateFlowMSM_();
   Teuchos::ParameterList TranslateFlowBCs_(const std::string& domain);
-  Teuchos::ParameterList TranslateFlowSources_();
   Teuchos::ParameterList TranslateFlowFractures_(const std::string& domain);
 
   // -- transport
@@ -155,11 +159,14 @@ class InputConverterU : public InputConverter {
 
   // -- chemistry and energy
   Teuchos::ParameterList TranslateChemistry_(const std::string& domain);
-  Teuchos::ParameterList TranslateEnergy_();
-  Teuchos::ParameterList TranslateEnergyBCs_();
+  Teuchos::ParameterList TranslateEnergy_(const std::string& domain);
+  Teuchos::ParameterList TranslateEnergyBCs_(const std::string& domain);
+
+  // -- shallow water
+  Teuchos::ParameterList TranslateShallowWater_(const std::string& domain);
 
   // -- mpc pks
-  bool coupled_flow_, coupled_transport_;
+  bool coupled_flow_, coupled_transport_, coupled_energy_;
   std::vector<std::string> fracture_regions_;
 
   void ProcessMacros_(const std::string& prefix, char* text_content,
@@ -177,7 +184,13 @@ class InputConverterU : public InputConverter {
   void TranslateFunctionGaussian_(const std::vector<double>& data, Teuchos::ParameterList& bcfn);
 
   void FilterEmptySublists_(Teuchos::ParameterList& plist);
-  void MergeInitialConditionsLists_(Teuchos::ParameterList& plist);
+  void MergeInitialConditionsLists_(Teuchos::ParameterList& plist, const std::string& chemistry);
+
+  bool TranslateGenericMath_(const std::vector<double>& times,
+                             const std::vector<double>& values,
+                             const std::vector<std::string>& forms,
+                             const std::vector<std::string>& formulas,
+                             Teuchos::ParameterList& bcfn);
 
   // -- sort functions
   template<class Iterator>

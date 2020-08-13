@@ -32,13 +32,12 @@ XERCES_CPP_NAMESPACE_USE
 /* ******************************************************************
 * Create energy list.
 ****************************************************************** */
-Teuchos::ParameterList InputConverterU::TranslateEnergy_()
+Teuchos::ParameterList InputConverterU::TranslateEnergy_(const std::string& domain)
 {
   Teuchos::ParameterList out_list;
-  Teuchos::ParameterList* energy_list = nullptr;
 
   if (vo_->getVerbLevel() >= Teuchos::VERB_HIGH)
-    *vo_->os() << "Translating energy" << std::endl;
+    *vo_->os() << "Translating energy, domain=" << domain << std::endl;
 
   MemoryManager mm;
   DOMNode* node;
@@ -48,11 +47,8 @@ Teuchos::ParameterList InputConverterU::TranslateEnergy_()
   bool flag;
   node = GetUniqueElementByTagsString_("unstructured_controls, unstr_energy_controls", flag);
 
-  // create energy header
-  if (pk_model_["energy"] == "two-phase energy") {
-    Teuchos::ParameterList& tmp = out_list.sublist("two-phase problem");
-    energy_list = &tmp;
-  }
+  // create flow header
+  out_list.set<std::string>("domain name", (domain == "matrix") ? "domain" : domain);
 
   // insert operator sublist
   std::string disc_method("mfd-optimized_for_sparsity");
@@ -71,38 +67,43 @@ Teuchos::ParameterList InputConverterU::TranslateEnergy_()
   bool modify_correction(false);
   node = GetUniqueElementByTagsString_("unstructured_controls, unstr_nonlinear_solver, modify_correction", flag);
 
-  energy_list->sublist("operators") = TranslateDiffusionOperator_(
+  out_list.sublist("operators") = TranslateDiffusionOperator_(
       disc_method, pc_method, nonlinear_solver, "", "", false);
 
   // insert thermal conductivity evaluator with the default values (no 2.2 support yet)
-  Teuchos::ParameterList& thermal = energy_list->sublist("thermal conductivity evaluator")
-                                                .sublist("thermal conductivity parameters");
-  thermal.set<std::string>("thermal conductivity type", "two-phase Peters-Lidard");
+  Teuchos::ParameterList& thermal = out_list.sublist("thermal conductivity evaluator")
+                                            .sublist("thermal conductivity parameters");
+  if (pk_model_["energy"] == "two-phase energy") {
+    thermal.set<std::string>("thermal conductivity type", "two-phase Peters-Lidard");
+    thermal.set<double>("thermal conductivity of gas", 0.02);
+    thermal.set<double>("unsaturated alpha", 1.0);
+    thermal.set<double>("epsilon", 1.0e-10);
+  } else {
+    thermal.set<std::string>("thermal conductivity type", "one-phase polynomial");
+  }
   thermal.set<double>("thermal conductivity of rock", 0.2);
   thermal.set<double>("thermal conductivity of liquid", 0.1);
-  thermal.set<double>("thermal conductivity of gas", 0.02);
-  thermal.set<double>("unsaturated alpha", 1.0);
-  thermal.set<double>("epsilon", 1.0e-10);
 
   // insert time integrator
   std::string err_options("energy"), unstr_controls("unstructured_controls, unstr_energy_controls");
   
   if (pk_master_.find("energy") != pk_master_.end()) {
-    energy_list->sublist("time integrator") = TranslateTimeIntegrator_(
+    out_list.sublist("time integrator") = TranslateTimeIntegrator_(
         err_options, nonlinear_solver, modify_correction, unstr_controls,
         TI_TS_REDUCTION_FACTOR, TI_TS_INCREASE_FACTOR);  
   }
 
   // insert boundary conditions and source terms
-  energy_list->sublist("boundary conditions") = TranslateEnergyBCs_();
+  out_list.sublist("boundary conditions") = TranslateEnergyBCs_(domain);
+  out_list.sublist("source terms") = TranslateSources_(domain, "energy");
 
   // insert internal evaluators
-  energy_list->sublist("energy evaluator")
-              .sublist("verbose object") = verb_list_.sublist("verbose object");
-  energy_list->sublist("enthalpy evaluator")
-              .sublist("verbose object") = verb_list_.sublist("verbose object");
+  out_list.sublist("energy evaluator")
+          .sublist("verbose object") = verb_list_.sublist("verbose object");
+  out_list.sublist("enthalpy evaluator")
+          .sublist("verbose object") = verb_list_.sublist("verbose object");
 
-  energy_list->sublist("verbose object") = verb_list_.sublist("verbose object");
+  out_list.sublist("verbose object") = verb_list_.sublist("verbose object");
   return out_list;
 }
 
@@ -110,28 +111,32 @@ Teuchos::ParameterList InputConverterU::TranslateEnergy_()
 /* ******************************************************************
 * Create list of energy BCs.
 ****************************************************************** */
-Teuchos::ParameterList InputConverterU::TranslateEnergyBCs_()
+Teuchos::ParameterList InputConverterU::TranslateEnergyBCs_(const std::string& domain)
 {
   Teuchos::ParameterList out_list;
 
   MemoryManager mm;
 
-  char *text, *tagname;
-  DOMNodeList *node_list, *children;
+  char *text;
+  DOMNodeList *children;
   DOMNode *node;
   DOMElement *element;
 
-  node_list = doc_->getElementsByTagName(mm.transcode("boundary_conditions"));
-  if (!node_list) return out_list;
+  // correct list of boundary conditions for given domain
+  bool flag;
+  if (domain == "matrix")
+    node = GetUniqueElementByTagsString_("boundary_conditions", flag);
+  else
+    node = GetUniqueElementByTagsString_("fracture_network, boundary_conditions", flag);
+  if (!flag) return out_list;
 
   int ibc(0);
-  children = node_list->item(0)->getChildNodes();
+  children = node->getChildNodes();
   int nchildren = children->getLength();
 
   for (int i = 0; i < nchildren; ++i) {
     DOMNode* inode = children->item(i);
     if (inode->getNodeType() != DOMNode::ELEMENT_NODE) continue;
-    tagname = mm.transcode(inode->getNodeName());
 
     // read the assigned regions
     bool flag;
@@ -149,7 +154,7 @@ Teuchos::ParameterList InputConverterU::TranslateEnergyBCs_()
     std::vector<DOMNode*> same_list = GetSameChildNodes_(node, bctype, flag, true);
 
     std::map<double, double> tp_values;
-    std::map<double, std::string> tp_forms;
+    std::map<double, std::string> tp_forms, tp_formulas;
 
     for (int j = 0; j < same_list.size(); ++j) {
       DOMNode* jnode = same_list[j];
@@ -158,17 +163,18 @@ Teuchos::ParameterList InputConverterU::TranslateEnergyBCs_()
 
       tp_forms[t0] = GetAttributeValueS_(element, "function");
       tp_values[t0] = GetAttributeValueD_(element, "value", TYPE_NUMERICAL, 0.0, 1000.0, "K", false, 0.0);
+      tp_formulas[t0] = GetAttributeValueS_(element, "formula", TYPE_NONE, false, "");
     }
 
     // create vectors of values and forms
     std::vector<double> times, values;
-    std::vector<std::string> forms;
+    std::vector<std::string> forms, formulas;
     for (std::map<double, double>::iterator it = tp_values.begin(); it != tp_values.end(); ++it) {
       times.push_back(it->first);
       values.push_back(it->second);
       forms.push_back(tp_forms[it->first]);
+      formulas.push_back(tp_formulas[it->first]);
     }
-    forms.pop_back();
 
     // create names, modify data
     std::string bcname;
@@ -186,14 +192,7 @@ Teuchos::ParameterList InputConverterU::TranslateEnergyBCs_()
       .set<std::string>("spatial distribution method", "none");
 
     Teuchos::ParameterList& bcfn = bc.sublist(bcname);
-    if (times.size() == 1) {
-      bcfn.sublist("function-constant").set<double>("value", values[0]);
-    } else {
-      bcfn.sublist("function-tabular")
-          .set<Teuchos::Array<double> >("x values", times)
-          .set<Teuchos::Array<double> >("y values", values)
-          .set<Teuchos::Array<std::string> >("forms", forms);
-    }
+    TranslateGenericMath_(times, values, forms, formulas, bcfn);
   }
 
   return out_list;

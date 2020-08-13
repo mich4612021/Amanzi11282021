@@ -55,7 +55,9 @@ int ObservableSolute::ComputeRegionSize()
 
   std::string solute_var = comp_names_[tcc_index_] + " volumetric flow rate";
 
-  if (variable_ == solute_var || variable_ == "aqueous mass flow rate" || variable_ == "aqueous volumetric flow rate") {  // flux needs faces
+  if (variable_ == solute_var ||
+      variable_ == "aqueous mass flow rate" ||
+      variable_ == "aqueous volumetric flow rate") {  // flux needs faces
     region_size_ = mesh_->get_set_size(region_,
                                        Amanzi::AmanziMesh::FACE,
                                        Amanzi::AmanziMesh::Parallel_type::OWNED);
@@ -99,14 +101,15 @@ void ObservableSolute::ComputeObservation(
     State& S, double* value, double* volume, std::string& unit)
 {
   Errors::Message msg;
-  int dim = mesh_->space_dimension();
 
   Key ws_key =  Keys::getKey(domain_, "saturation_liquid");
   Key tcc_key = Keys::getKey(domain_, "total_component_concentration");
   Key poro_key = Keys::getKey(domain_, "porosity");
   Key darcy_key = Keys::getKey(domain_, "darcy_flux");
-
   
+  // fields below are subject to various input conditions
+  Key total_sorbed_key = Keys::getKey(domain_, "total_sorbed");
+
   if (!S.HasField(tcc_key)) {
     // bail out with default values if this field is not yet created
     *value = 0.0;
@@ -130,6 +133,35 @@ void ObservableSolute::ComputeObservation(
       *volume += factor;
     }
 
+  } else if (variable_ == comp_names_[tcc_index_] + " sorbed concentration" &&
+             S.HasField(total_sorbed_key)) {
+    const auto& sorbed = *S.GetFieldData(total_sorbed_key)->ViewComponent("cell");
+
+    // we assume constant particle density
+    for (int i = 0; i < region_size_; i++) {
+      int c = entity_ids_[i];
+      double factor = (1.0 - porosity[0][c]) * mesh_->cell_volume(c);
+
+      *value += sorbed[tcc_index_][c] * factor;
+      *volume += factor;
+    }
+
+  } else if (variable_ == comp_names_[tcc_index_] + " free ion concentration") {
+    Key free_ion_key = Keys::getKey(domain_, "primary_free_ion_concentration_" + comp_names_[tcc_index_]);
+    if (!S.HasField(free_ion_key)) {
+      msg << "Observation: state does not have field \"" << variable_ << "\"";
+      Exceptions::amanzi_throw(msg);
+    }
+    const auto& free_ion = *S.GetFieldData(free_ion_key)->ViewComponent("cell");
+
+    for (int i = 0; i < region_size_; i++) {
+      int c = entity_ids_[i];
+      double factor = mesh_->cell_volume(c);
+
+      *value += free_ion[0][c] * factor;
+      *volume += factor;
+    }
+
   } else if (variable_ == comp_names_[tcc_index_] + " gaseous concentration") { 
     for (int i = 0; i < region_size_; i++) {
       int c = entity_ids_[i];
@@ -141,7 +173,9 @@ void ObservableSolute::ComputeObservation(
     }
 
   } else if (variable_ == comp_names_[tcc_index_] + " volumetric flow rate") {
+
     const Epetra_MultiVector& darcy_flux = *S.GetFieldData(darcy_key)->ViewComponent("face");
+    const auto& fmap = *S.GetFieldData(darcy_key)->Map().Map("face", true);
     Amanzi::AmanziMesh::Entity_ID_List cells;
 
     if (obs_boundary_) { // observation is on a boundary set
@@ -153,8 +187,9 @@ void ObservableSolute::ComputeObservation(
         const AmanziGeometry::Point& face_normal = mesh_->face_normal(f, false, c, &sign);
         double area = mesh_->face_area(f);
         double factor = units_.concentration_factor();
+        int g = fmap.FirstPointInElement(f);
 
-        *value += std::max(0.0, sign * darcy_flux[0][f]) * tcc[tcc_index_][c] * factor;
+        *value += std::max(0.0, sign * darcy_flux[0][g]) * tcc[tcc_index_][c] * factor;
         *volume += area * factor;
       }
 
@@ -170,8 +205,9 @@ void ObservableSolute::ComputeObservation(
         double area = mesh_->face_area(f);
         double sign = (reg_normal_ * face_normal) * csign / area;
         double factor = units_.concentration_factor();
-    
-        *value += sign * darcy_flux[0][f] * tcc[tcc_index_][c] * factor;
+        int g = fmap.FirstPointInElement(f);
+        
+        *value += sign * darcy_flux[0][g] * tcc[tcc_index_][c] * factor;
         *volume += area * factor;
       }
 

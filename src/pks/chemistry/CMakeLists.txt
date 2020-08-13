@@ -84,6 +84,7 @@ if (BUILD_TESTS AND ENABLE_Unstructured)
     if (NOT (${CMAKE_SOURCE_DIR} EQUAL ${CMAKE_BINARY_DIR}))
         file(GLOB DataFiles "${CHEMPK_SOURCE_DIR}/test/*.xml"
                             "${CHEMPK_SOURCE_DIR}/test/*.bgd"
+                            "${CHEMPK_SOURCE_DIR}/test/*.dbs"
                             "${CHEMPK_SOURCE_DIR}/test/*.in"
                             "${CHEMPK_SOURCE_DIR}/test/*.dat")
         file(COPY ${DataFiles} DESTINATION ${CHEMPK_BINARY_DIR}/test/)
@@ -93,7 +94,7 @@ if (BUILD_TESTS AND ENABLE_Unstructured)
                     KIND int
                     SOURCE test/Main.cc test/chemistry_amanzi_pk.cc
                     LINK_LIBS chemistry_pk state pks data_structures
-                              mesh_functions mesh mesh_factory error_handling interface
+                              mesh_functions mesh mesh_factory error_handling
                               ${UnitTest_LIBRARIES} ${Teuchos_LIBRARIES} ${Epetra_LIBRARIES}
                               ${XERCES_LIBRARIES} ${XERCES_ICU_LIBRARIES} ${NOX_LIBRARIES}
                               ${HYPRE_LIBRARY})
@@ -103,7 +104,7 @@ if (BUILD_TESTS AND ENABLE_Unstructured)
                       KIND int
                       SOURCE test/Main.cc test/chemistry_alquimia_pk.cc
                       LINK_LIBS chemistry_pk state pks data_structures
-                                mesh_functions mesh mesh_factory error_handling interface
+                                mesh_functions mesh mesh_factory error_handling
                                 ${UnitTest_LIBRARIES} ${Teuchos_LIBRARIES} ${Epetra_LIBRARIES}
                                 ${HDF5_LIBRARIES} ${XERCESC_LIBRARIES} ${XERCES_ICU_LIBRARIES}
                                 ${NOX_LIBRARIES})
@@ -115,7 +116,7 @@ if (BUILD_TESTS AND ENABLE_Unstructured)
                     KIND int
                     SOURCE test/chemistry_benchmarks_1d.cc
                     LINK_LIBS chemistry_pk state pks data_structures
-                              mesh_functions mesh mesh_factory error_handling interface
+                              mesh_functions mesh mesh_factory error_handling
                               ${UnitTest_LIBRARIES} ${Teuchos_LIBRARIES} ${Epetra_LIBRARIES}
                               ${HDF5_LIBRARIES} ${XERCESC_LIBRARIES} ${XERCES_ICU_LIBRARIES}
                               ${NOX_LIBRARIES})

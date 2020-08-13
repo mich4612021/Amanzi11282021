@@ -30,9 +30,10 @@ include_directories(${Boost_INCLUDE_DIRS})
 #
 # Library: mesh
 #
-add_amanzi_library(mesh SOURCE GenerationSpec.cc 
-                               Mesh.cc 
-                               Mesh_Sets.cc 
+add_amanzi_library(mesh SOURCE GenerationSpec.cc
+                               Mesh.cc
+                               Mesh_Sets.cc
+                               DomainSet.cc
                         LINK_LIBS geometry atk ${Epetra_LIBRARIES})
 
 #
@@ -84,11 +85,6 @@ if (BUILD_TESTS)
 
     # Test link libraries
     set(test_link_libs geometry simple_mesh mesh_factory ${UnitTest_LIBRARIES} ${HDF5_LIBRARIES})
-
-    # STK (Trilinos Package)
-    if (ENABLE_STK_Mesh)
-      list(APPEND test_link_libs stk_mesh)
-    endif()    
 
     # MOAB Mesh framework
     if (ENABLE_MOAB_Mesh)

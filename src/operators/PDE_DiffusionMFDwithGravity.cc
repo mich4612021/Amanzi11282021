@@ -26,9 +26,13 @@ void PDE_DiffusionMFDwithGravity::UpdateMatrices(
     const Teuchos::Ptr<const CompositeVector>& flux,
     const Teuchos::Ptr<const CompositeVector>& u)
 {
-  PDE_DiffusionMFD::UpdateMatrices(flux, u);
+  // optimize div[K k(grad u + b g u)] to div[K1 (grad u + b1 g u)]
+  if (!gravity_term_initialized_) {
+    if (is_scalar_) rho_ *= const_k_;
+    gravity_term_initialized_ = true;
+  }
 
-  AMANZI_ASSERT(little_k_ != OPERATOR_LITTLE_K_DIVK_TWIN_GRAD);
+  PDE_DiffusionMFD::UpdateMatrices(flux, u);
   AddGravityToRHS_();
 }
 
@@ -64,6 +68,7 @@ void PDE_DiffusionMFDwithGravity::AddGravityToRHS_()
 
     WhetStone::Tensor Kc(mesh_->space_dimension(), 1);
     Kc(0, 0) = 1.0;
+    if (const_K_.rank() > 0) Kc = const_K_;
 
     // gravity discretization
     bool fv_flag = (gravity_method_ == OPERATOR_GRAVITY_FV) ||
@@ -113,7 +118,7 @@ void PDE_DiffusionMFDwithGravity::AddGravityToRHS_()
         for (int n = 0; n < nfaces; n++) {
           int f = faces[n];
           const AmanziGeometry::Point& normal = mesh_->face_normal(f, false, c, &dir);
-          double tmp, zf = (mesh_->face_centroid(f))[dim - 1];
+          double tmp;
 
           if (gravity_special_projection_) {
             const AmanziGeometry::Point& xcc = GravitySpecialDirection_(f);
@@ -190,6 +195,7 @@ void PDE_DiffusionMFDwithGravity::UpdateFlux(const Teuchos::Ptr<const CompositeV
 
   WhetStone::Tensor Kc(dim, 1);
   Kc(0, 0) = 1.0;
+  if (const_K_.rank() > 0) Kc = const_K_;
 
   // gravity discretization
   bool fv_flag = (gravity_method_ == OPERATOR_GRAVITY_FV) ||
@@ -255,7 +261,7 @@ void PDE_DiffusionMFDwithGravity::UpdateFlux(const Teuchos::Ptr<const CompositeV
       for (int n = 0; n < nfaces; n++) {
         int dir, f = faces[n];
         if (f < nfaces_owned) {
-          const AmanziGeometry::Point& normal = mesh_->face_normal(f, false, c, &dir);
+          mesh_->face_normal(f, false, c, &dir);
             
           double tmp = av(n) * kf[n] * dir;
           grav_flux[0][f] += tmp;
@@ -299,18 +305,17 @@ void PDE_DiffusionMFDwithGravity::UpdateFluxNonManifold(
   grav_data.PutScalar(0.0);
 
   int ndofs_owned = flux->ViewComponent("face")->MyLength();
-  int ndofs_wghost = flux_data.MyLength();
 
   AmanziMesh::Entity_ID_List faces;
   const auto& fmap = *flux->Map().Map("face", true);
 
   WhetStone::Tensor Kc(dim, 1);
   Kc(0, 0) = 1.0;
+  if (const_K_.rank() > 0) Kc = const_K_;
 
   for (int c = 0; c < ncells_owned; c++) {
     mesh_->cell_get_faces(c, &faces);
     int nfaces = faces.size();
-    double zc = mesh_->cell_centroid(c)[dim - 1];
 
     // Update terms due to nonlinear coefficient
     double kc(1.0);
@@ -372,6 +377,8 @@ void PDE_DiffusionMFDwithGravity::Init_(Teuchos::ParameterList& plist)
     gravity_method_ = OPERATOR_GRAVITY_HH;
   else
     gravity_method_ = OPERATOR_GRAVITY_FV;
+
+  gravity_term_initialized_ = false;
 }
 
 
@@ -407,6 +414,8 @@ double PDE_DiffusionMFDwithGravity::ComputeGravityFlux(int f) const
 
   if (K_.get()) {
     gflux = (((*K_)[c] * g_) * normal);
+  } else if (const_K_.rank() > 0) {
+    gflux = (const_K_ * g_) * normal;
   } else {
     gflux = g_ * normal;
   }

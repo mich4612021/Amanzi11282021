@@ -19,7 +19,6 @@
 
 // Amanzi
 #include "FnBaseDefs.hh"
-#include "Operator.hh"
 #include "PDE_Accumulation.hh"
 #include "PDE_Diffusion.hh"
 #include "PK_Factory.hh"
@@ -57,7 +56,7 @@ class Darcy_PK : public Flow_PK {
   virtual void CommitStep(double t_old, double t_new, const Teuchos::RCP<State>& S) override;
   virtual void CalculateDiagnostics(const Teuchos::RCP<State>& S) override;
 
-  virtual std::string name() override { return passwd_; }
+  virtual std::string name() override { return "darcy"; }
 
   // methods required for time integration interface. It is not used by simple Darcy flow,
   // however, coupled method may need the residual evaluation routine.
@@ -98,8 +97,11 @@ class Darcy_PK : public Flow_PK {
   void SolveFullySaturatedProblem(CompositeVector& u, bool wells_on);
 
   // access methods
-  Teuchos::RCP<Operators::Operator> op() { return op_; }
-  Teuchos::RCP<Operators::PDE_Diffusion> op_diff() { return op_diff_; }
+  virtual Teuchos::RCP<Operators::Operator>
+      my_operator(const Operators::OperatorType& type) override { return op_; } 
+
+  virtual Teuchos::RCP<Operators::PDE_HelperDiscretization>
+      my_pde(const Operators::PDEType& type) override { return op_diff_; } 
 
  private:
   void InitializeFields_();

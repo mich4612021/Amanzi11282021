@@ -67,21 +67,24 @@ class PDE_Diffusion : public PDE_HelperDiscretization {
       PDE_HelperDiscretization(global_op),
       K_(Teuchos::null),
       k_(Teuchos::null),
-      dkdp_(Teuchos::null)
+      dkdp_(Teuchos::null),
+      const_k_(1.0)
   {};
 
   PDE_Diffusion(const Teuchos::RCP<const AmanziMesh::Mesh>& mesh) :
       PDE_HelperDiscretization(mesh),
       K_(Teuchos::null),
       k_(Teuchos::null),
-      dkdp_(Teuchos::null)
+      dkdp_(Teuchos::null),
+      const_k_(1.0)
   {};
 
   PDE_Diffusion(const Teuchos::RCP<AmanziMesh::Mesh>& mesh) :
       PDE_HelperDiscretization(mesh),
       K_(Teuchos::null),
       k_(Teuchos::null),
-      dkdp_(Teuchos::null)
+      dkdp_(Teuchos::null),
+      const_k_(1.0)
   {};
 
   virtual ~PDE_Diffusion() = default;
@@ -91,6 +94,8 @@ class PDE_Diffusion : public PDE_HelperDiscretization {
   virtual void SetTensorCoefficient(const Teuchos::RCP<const std::vector<WhetStone::Tensor> >& K) = 0;
   virtual void SetScalarCoefficient(const Teuchos::RCP<const CompositeVector>& k,
                                     const Teuchos::RCP<const CompositeVector>& dkdp) = 0;
+  void SetConstantScalarCoefficient(double k) { const_k_ = k; }
+  void SetConstantTensorCoefficient(const WhetStone::Tensor& K) { const_K_ = K; }
 
   // -- creation of an operator
   virtual void UpdateMatricesNewtonCorrection(
@@ -153,22 +158,20 @@ class PDE_Diffusion : public PDE_HelperDiscretization {
     if (little_k_ != OPERATOR_LITTLE_K_STANDARD) {
       out.AddComponent("face", AmanziMesh::FACE, 1);
     }
-    if (little_k_ == OPERATOR_LITTLE_K_DIVK_TWIN || 
-        little_k_ == OPERATOR_LITTLE_K_DIVK_TWIN_GRAD) {
+    if (little_k_ == OPERATOR_LITTLE_K_DIVK_TWIN) {
       out.AddComponent("twin", AmanziMesh::FACE, 1);
-    }
-    if (little_k_ == OPERATOR_LITTLE_K_DIVK_TWIN_GRAD) {
-      out.AddComponent("grad", AmanziMesh::CELL, mesh_->space_dimension());
     }
     return out;          
   }
   
  protected:
   Teuchos::RCP<const std::vector<WhetStone::Tensor> > K_;
+  WhetStone::Tensor const_K_;
   bool K_symmetric_;
 
   // nonlinear coefficient and its representation
   Teuchos::RCP<const CompositeVector> k_, dkdp_;
+  double const_k_;
   int little_k_;
 
   // additional operators

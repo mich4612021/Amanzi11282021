@@ -28,6 +28,8 @@ namespace Operators {
 ****************************************************************** */
 void PDE_AdvectionUpwind::InitAdvection_(Teuchos::ParameterList& plist)
 {
+  name_ = plist.get<std::string>("name", "Advection: FACE_CELL");
+
   if (global_op_ == Teuchos::null) {
     // constructor was given a mesh
     global_schema_row_.set_base(AmanziMesh::FACE);
@@ -38,12 +40,10 @@ void PDE_AdvectionUpwind::InitAdvection_(Teuchos::ParameterList& plist)
     cvs->SetMesh(mesh_)->AddComponent("cell", AmanziMesh::CELL, 1);
     global_op_ = Teuchos::rcp(new Operator_Cell(cvs, plist, global_schema_row_.OldSchema()));
 
-    std::string name("FACE_CELL");
-
     if (plist.get<bool>("surface operator", false)) {
-      local_op_ = Teuchos::rcp(new Op_SurfaceFace_SurfaceCell(name, mesh_));
+      local_op_ = Teuchos::rcp(new Op_SurfaceFace_SurfaceCell(name_, mesh_));
     } else {
-      local_op_ = Teuchos::rcp(new Op_Face_Cell(name, mesh_));
+      local_op_ = Teuchos::rcp(new Op_Face_Cell(name_, mesh_));
     }
 
   } else {
@@ -58,12 +58,10 @@ void PDE_AdvectionUpwind::InitAdvection_(Teuchos::ParameterList& plist)
     } else {
       mesh_ = global_op_->DomainMap().Mesh();
 
-      std::string name("FACE_CELL");
-
       if (plist.get<bool>("surface operator", false)) {
-        local_op_ = Teuchos::rcp(new Op_SurfaceFace_SurfaceCell(name, mesh_));
+        local_op_ = Teuchos::rcp(new Op_SurfaceFace_SurfaceCell(name_, mesh_));
       } else {
-        local_op_ = Teuchos::rcp(new Op_Face_Cell(name, mesh_));
+        local_op_ = Teuchos::rcp(new Op_Face_Cell(name_, mesh_));
       }
     }
   }
@@ -90,7 +88,6 @@ void PDE_AdvectionUpwind::Setup(const CompositeVector& u)
 void PDE_AdvectionUpwind::UpdateMatrices(const Teuchos::Ptr<const CompositeVector>& u)
 {
   std::vector<WhetStone::DenseMatrix>& matrix = local_op_->matrices;
-  std::vector<WhetStone::DenseMatrix>& matrix_shadow = local_op_->matrices_shadow;
 
   AmanziMesh::Entity_ID_List cells;
   const Epetra_MultiVector& uf = *u->ViewComponent("face");
@@ -133,7 +130,6 @@ void PDE_AdvectionUpwind::UpdateMatrices(
     const Teuchos::Ptr<const CompositeVector>& dhdT)
 {
   std::vector<WhetStone::DenseMatrix>& matrix = local_op_->matrices;
-  std::vector<WhetStone::DenseMatrix>& matrix_shadow = local_op_->matrices_shadow;
 
   AmanziMesh::Entity_ID_List cells;
   const Epetra_MultiVector& uf = *u->ViewComponent("face");
@@ -194,8 +190,6 @@ void PDE_AdvectionUpwind::UpdateMatrices(
 void PDE_AdvectionUpwind::ApplyBCs(bool primary, bool eliminate, bool essential_eqn)
 {
   std::vector<WhetStone::DenseMatrix>& matrix = local_op_->matrices;
-  std::vector<WhetStone::DenseMatrix>& matrix_shadow = local_op_->matrices_shadow;
-
   Epetra_MultiVector& rhs_cell = *global_op_->rhs()->ViewComponent("cell");
 
   const std::vector<int>& bc_model = bcs_trial_[0]->bc_model();
@@ -247,7 +241,6 @@ void PDE_AdvectionUpwind::UpdateFlux(
     const Teuchos::RCP<BCs>& bc, const Teuchos::Ptr<CompositeVector>& flux)
 {
   // might need to think more carefully about BCs
-  const std::vector<int>& bc_model = bc->bc_model();
   const std::vector<double>& bc_value = bc->bc_value();
   flux->PutScalar(0.0);
   

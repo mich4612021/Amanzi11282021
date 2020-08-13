@@ -417,39 +417,6 @@ message(STATUS ">>>  LAPACK_LIBRARIES = ${LAPACK_LIBRARIES}")
 # Set common build compiler flags, build types and directories
 # ############################################################################ #
 
-# CMake compiler settings for any package built with CMake
-
-# C language flags
-set(Amanzi_CMAKE_C_COMPILER_ARGS
-     -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS}
-     -DCMAKE_C_FLAGS_DEBUG:STRING=${CMAKE_C_FLAGS_DEBUG}
-     -DCMAKE_C_FLAGS_MINSIZEREL:STRING=${CMAKE_C_FLAGS_MINSIZEREL}
-     -DCMAKE_C_FLAGS_RELEASE:STRING=${CMAKE_C_FLAGS_RELEASE}
-     -DCMAKE_C_FLAGS_RELWITHDEBINFO:STRING=${CMAKE_C_FLAGS_RELWITHDEBINFO})
-
-# C++ language flags 
-set(Amanzi_CMAKE_CXX_COMPILER_ARGS
-     -DCMAKE_CXX_FLAGS:STRING=${CMAKE_CXX_FLAGS}
-     -DCMAKE_CXX_FLAGS_DEBUG:STRING=${CMAKE_CXX_FLAGS_DEBUG}
-     -DCMAKE_CXX_FLAGS_MINSIZEREL:STRING=${CMAKE_CXX_FLAGS_MINSIZEREL}
-     -DCMAKE_CXX_FLAGS_RELEASE:STRING=${CMAKE_CXX_FLAGS_RELEASE}
-     -DCMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=${CMAKE_CXX_FLAGS_RELWITHDEBINFO})
-
-# Fortran language flags    
-set(Amanzi_CMAKE_Fortran_COMPILER_ARGS
-     -DCMAKE_Fortran_FLAGS:STRING=${CMAKE_Fortran_FLAGS}
-     -DCMAKE_Fortran_FLAGS_DEBUG:STRING=${CMAKE_Fortran_FLAGS_DEBUG}
-     -DCMAKE_Fortran_FLAGS_MINSIZEREL:STRING=${CMAKE_Fortran_FLAGS_MINSIZEREL}
-     -DCMAKE_Fortran_FLAGS_RELEASE:STRING=${CMAKE_Fortran_FLAGS_RELEASE}
-     -DCMAKE_Fortran_FLAGS_RELWITHDEBINFO:STRING=${CMAKE_Fortran_FLAGS_RELWITHDEBINFO})
-
-# Link flags
-set(Amanzi_CMAKE_LINKER_ARGS
-     -DCMAKE_EXE_LINKER_FLAGS:STRING=${CMAKE_EXE_LINKER_FLAGS}
-     -DCMAKE_SHARED_LINKER_FLAGS:STRING=${CMAKE_SHARED_LINKER_FLAGS})
-
-message(STATUS "Amanzi_CMAKE_LINKER_ARGS=${Amanzi_CMAKE_LINKER_ARGS}")
-
 # Common compiler flags to ensure a uniform build in projects that do not use CMake
 include(BuildWhitespaceString)
 string(TOUPPER "${CMAKE_BUILD_TYPE}" build_type_uc)
@@ -467,10 +434,14 @@ if (CMAKE_EXE_LINK_FLAGS)
   build_whitespace_string(Amanzi_COMMON_LDFLAGS ${CMAKE_EXE_LINK_FLAGS})
 endif()
 
+# Common CMake controls
+list(APPEND AMANZI_CMAKE_CACHE_ARGS "-DCMAKE_PREFIX_PATH:PATH=${TPL_INSTALL_PREFIX}")
+
 message(STATUS "\tcommon C flags\t\t${Amanzi_COMMON_CFLAGS}")
 message(STATUS "\tcommon C++ flags\t${Amanzi_COMMON_CXXFLAGS}")
 message(STATUS "\tcommon Fortran flags\t${Amanzi_COMMON_FCFLAGS}")
 message(STATUS "\tcommon Linker flags\t${Amanzi_COMMON_LDFLAGS}")
+message(STATUS "\tcommon arguments\t${AMANZI_CMAKE_CACHE_ARGS}")
 
 
 # ############################################################################ #
@@ -648,15 +619,18 @@ else()
     set(ParMetis_DIR ${PARMETIS_INSTALL_PREFIX})
 endif()
 
-# SuperLU -- needs to go before HYPRE and PETSc because they needs it
-include(${SuperBuild_BUILD_FILES_DIR}/Build_SuperLU.cmake)
-append_set(Amanzi_TPL_CMAKE_ARGS
-           -DSuperLU_DIR:FILEPATH=${TPL_INSTALL_PREFIX})
+option(ENABLE_SUPERLU "Build the SuperLU solver package" TRUE)
+if (ENABLE_SUPERLU)
+  # SuperLU -- needs to go before HYPRE and PETSc because they needs it
+  include(${SuperBuild_BUILD_FILES_DIR}/Build_SuperLU.cmake)
+  append_set(Amanzi_TPL_CMAKE_ARGS
+             -DSuperLU_DIR:FILEPATH=${TPL_INSTALL_PREFIX})
 
-# SuperLUDist
-include(${SuperBuild_BUILD_FILES_DIR}/Build_SuperLUDist.cmake)
-append_set(Amanzi_TPL_CMAKE_ARGS
-           -DSuperLUDist_DIR:FILEPATH=${TPL_INSTALL_PREFIX})
+  # SuperLUDist
+  include(${SuperBuild_BUILD_FILES_DIR}/Build_SuperLUDist.cmake)
+  append_set(Amanzi_TPL_CMAKE_ARGS
+    -DSuperLUDist_DIR:FILEPATH=${TPL_INSTALL_PREFIX})
+endif()
 
 # HYPRE
 option(ENABLE_HYPRE "Build the HYPRE solver package" TRUE)
@@ -731,6 +705,11 @@ if (ENABLE_Silo)
              -DSilo_LIBRARY_DIR:PATH=${Silo_LIBRARY_DIR})
 endif()
 
+# CLM
+if (ENABLE_CLM)
+  include(${SuperBuild_BUILD_FILES_DIR}/Build_CLM.cmake)
+endif()
+
 # Alquimia and chemical engines (PFloTran and CrunchTope)
 if (NOT ENABLE_XSDK)
   
@@ -803,10 +782,20 @@ if (ENABLE_MSTK_Mesh)
   set(Nanoflann_INCLUDE_DIRS "${Nanoflann_INSTALL_PREFIX}/include")
 endif()
 
+# EXPRTK
+include(${SuperBuild_BUILD_FILES_DIR}/Build_exprtk.cmake)
+
 
 # ############################################################################ #
 #  Final steps
 # ############################################################################ #
+# -- override compiler with nvccwrapper
+if (ENABLE_KOKKOS_CUDA)
+  set(NVCC_WRAPPER_DEFAULT_COMPILER ${CMAKE_CXX_COMPILER})
+  set(CMAKE_CXX_COMPILER ${Trilinos_INSTALL_PREFIX}/bin/nvcc_wrapper)
+else()
+  set(NVCC_WRAPPER_DEFAULT_COMPILER "")
+endif()
 
 #  --- Create a CMake cache script
 set(SuperBuild_Amanzi_CACHE_SCRIPT amanzi-tpl-config.cmake)

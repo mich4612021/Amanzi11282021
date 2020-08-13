@@ -55,10 +55,6 @@ void PDE_DiffusionMFD::SetTensorCoefficient(
 
   if (local_op_schema_ == OPERATOR_SCHEMA_BASE_CELL + OPERATOR_SCHEMA_DOFS_FACE + OPERATOR_SCHEMA_DOFS_CELL) {
     if (K_ != Teuchos::null && K_.get()) AMANZI_ASSERT(K_->size() == ncells_owned);
-
-    if (!mass_matrices_initialized_) {
-      CreateMassMatrices_();
-    }
   }
 }
 
@@ -78,23 +74,14 @@ void PDE_DiffusionMFD::SetScalarCoefficient(const Teuchos::RCP<const CompositeVe
       AMANZI_ASSERT(k->HasComponent("cell"));
     }
 
-    if (little_k_ != OPERATOR_LITTLE_K_STANDARD) {
+    if (little_k_ != OPERATOR_LITTLE_K_STANDARD &&
+        little_k_ != OPERATOR_LITTLE_K_NONE) {
       AMANZI_ASSERT(k->HasComponent("face"));
     }
 
-    if (little_k_ == OPERATOR_LITTLE_K_DIVK_TWIN || 
-        little_k_ == OPERATOR_LITTLE_K_DIVK_TWIN_GRAD) {
+    if (little_k_ == OPERATOR_LITTLE_K_DIVK_TWIN) {
       AMANZI_ASSERT(k->HasComponent("twin"));
     }
-
-    if (little_k_ == OPERATOR_LITTLE_K_DIVK_TWIN_GRAD) {
-      AMANZI_ASSERT(k->HasComponent("grad"));
-    }
-  }
-
-  // verify that mass matrices were initialized.
-  if (!mass_matrices_initialized_) {
-    CreateMassMatrices_();
   }
 }
 
@@ -106,6 +93,14 @@ void PDE_DiffusionMFD::UpdateMatrices(
     const Teuchos::Ptr<const CompositeVector>& flux,
     const Teuchos::Ptr<const CompositeVector>& u)
 {
+  // verify that mass matrices were initialized.
+  if (!mass_matrices_initialized_) {
+    CreateMassMatrices_();
+    // optimize div[K k(nabla u)] to div[K1 (nabla u)]
+    if (k_ == Teuchos::null && const_k_ != 1.0)
+      ScaleMassMatrices(const_k_);
+  }
+
   if (k_ != Teuchos::null) k_->ScatterMasterToGhosted();
 
   if (!exclude_primary_terms_) {
@@ -113,9 +108,7 @@ void PDE_DiffusionMFD::UpdateMatrices(
       UpdateMatricesNodal_();
     } else if ((local_op_schema_ & OPERATOR_SCHEMA_DOFS_CELL) &&
                (local_op_schema_ & OPERATOR_SCHEMA_DOFS_FACE)) {
-      if (little_k_ == OPERATOR_LITTLE_K_DIVK_TWIN_GRAD) {
-        UpdateMatricesMixedWithGrad_(flux);
-      } else if (little_k_ == OPERATOR_LITTLE_K_NONE) {
+      if (little_k_ == OPERATOR_LITTLE_K_NONE) {
         UpdateMatricesMixed_();
       } else {
         UpdateMatricesMixed_little_k_();
@@ -169,82 +162,6 @@ void PDE_DiffusionMFD::UpdateMatricesNewtonCorrection(
     }
   }
 }  
-
-
-/* ******************************************************************
-* Second-order reconstruction of little k inside mesh cells.
-* This member of DIVK-pamily of methods requires to recalcualte all
-* mass matrices.
-****************************************************************** */
-void PDE_DiffusionMFD::UpdateMatricesMixedWithGrad_(
-    const Teuchos::Ptr<const CompositeVector>& flux)
-{
-  AMANZI_ASSERT(!scaled_constraint_);
-
-  // preparing little-k data
-  Teuchos::RCP<const Epetra_MultiVector> k_cell = Teuchos::null;
-  Teuchos::RCP<const Epetra_MultiVector> k_face = Teuchos::null;
-  Teuchos::RCP<const Epetra_MultiVector> k_grad = Teuchos::null;
-  Teuchos::RCP<const Epetra_MultiVector> k_twin = Teuchos::null;
-  if (k_ != Teuchos::null) {
-    k_cell = k_->ViewComponent("cell");
-    k_face = k_->ViewComponent("face", true);
-    k_grad = k_->ViewComponent("grad");
-    if (k_->HasComponent("twin")) k_twin = k_->ViewComponent("twin", true);
-  }
-
-  // update matrix blocks
-  int dim = mesh_->space_dimension();
-  WhetStone::MFD3D_Diffusion mfd(mesh_);
-  WhetStone::DenseMatrix Wff;
-
-  AmanziMesh::Entity_ID_List faces, cells;
-
-  WhetStone::Tensor Kc(mesh_->space_dimension(), 1);
-  Kc(0, 0) = 1.0;
-  
-  for (int c = 0; c < ncells_owned; c++) {
-    // mean value and gradient of nonlinear factor
-    double kc = (*k_cell)[0][c];
-    AmanziGeometry::Point kgrad(dim);
-    for (int i = 0; i < dim; i++) kgrad[i] = (*k_grad)[i][c];
- 
-    // upwinded values of nonlinear factor
-    mesh_->cell_get_faces(c, &faces);
-    int nfaces = faces.size();
-    std::vector<double> kf(nfaces, 1.0); 
-    if (k_twin == Teuchos::null) {
-      for (int n = 0; n < nfaces; n++) kf[n] = (*k_face)[0][faces[n]];
-    } else {
-      for (int n = 0; n < nfaces; n++) {
-        int f = faces[n];
-        mesh_->face_get_cells(f, AmanziMesh::Parallel_type::ALL, &cells);
-        kf[n] = (c == cells[0]) ? (*k_face)[0][f] : (*k_twin)[0][f];
-      }
-    }
-
-    if (K_.get()) Kc = (*K_)[c];
-    mfd.MassMatrixInverseDivKScaled(c, Kc, kc, kgrad, Wff);
-
-    WhetStone::DenseMatrix Acell(nfaces + 1, nfaces + 1);
-
-    double matsum = 0.0; 
-    for (int n = 0; n < nfaces; n++) {
-      double rowsum = 0.0;
-      for (int m = 0; m < nfaces; m++) {
-        double tmp = Wff(n, m) * kf[n] * kf[m];
-        rowsum += tmp;
-        Acell(n, m) = tmp;
-      }
-
-      Acell(n, nfaces) = -rowsum;
-      Acell(nfaces, n) = -rowsum;
-      matsum += rowsum;
-    }
-    Acell(nfaces, nfaces) = matsum;
-    local_op_->matrices[c] = Acell;
-  }
-}
 
 
 /* ******************************************************************
@@ -422,8 +339,9 @@ void PDE_DiffusionMFD::UpdateMatricesNodal_()
 
   nfailed_primary_ = 0;
 
-  WhetStone::Tensor K(2, 1);
+  WhetStone::Tensor K(mesh_->space_dimension(), 1);
   K(0, 0) = 1.0;
+  if (const_K_.rank() > 0) K = const_K_;
   
   for (int c = 0; c < ncells_owned; c++) {
     if (K_.get()) K = (*K_)[c];
@@ -479,6 +397,7 @@ void PDE_DiffusionMFD::UpdateMatricesTPFA_()
 
   WhetStone::Tensor Kc(mesh_->space_dimension(), 1);
   Kc(0, 0) = 1.0;
+  if (const_K_.rank() > 0) Kc = const_K_;
 
   AmanziMesh::Entity_ID_List cells, faces;
   Ttmp.PutScalar(0.0);
@@ -935,7 +854,7 @@ void PDE_DiffusionMFD::AddNewtonCorrectionCell_(
     // define the upwind cell, index i in this case
     int i, dir, c1;
     c1 = cells[0];
-    const AmanziGeometry::Point& normal = mesh_->face_normal(f, false, c1, &dir);
+    mesh_->face_normal(f, false, c1, &dir);
     i = (v * dir >= 0.0) ? 0 : 1;
 
     if (ncells == 2) {
@@ -992,7 +911,7 @@ void PDE_DiffusionMFD::AddNewtonCorrectionCell_(
     // define the upwind cell, index i in this case
     int i, dir, c1;
     c1 = cells[0];
-    const AmanziGeometry::Point& normal = mesh_->face_normal(f, false, c1, &dir);
+    mesh_->face_normal(f, false, c1, &dir);
     i = (v * dir >= 0.0) ? 0 : 1;
 
     if (ncells == 2) {
@@ -1119,9 +1038,6 @@ void PDE_DiffusionMFD::UpdateFluxNonManifold(
 
   flux_data.PutScalar(0.0);
 
-  int ndofs_owned = flux->ViewComponent("face")->MyLength();
-  int ndofs_wghost = flux_data.MyLength();
-
   AmanziMesh::Entity_ID_List faces;
   std::vector<int> dirs;
   const auto& fmap = *flux->Map().Map("face", true);
@@ -1172,6 +1088,7 @@ void PDE_DiffusionMFD::CreateMassMatrices_()
 
   WhetStone::Tensor Kc(mesh_->space_dimension(), 1);
   Kc(0, 0) = 1.0;
+  if (const_K_.rank() > 0) Kc = const_K_;
 
   for (int c = 0; c < ncells_owned; c++) {
     int ok;
@@ -1431,8 +1348,6 @@ void PDE_DiffusionMFD::Init(Teuchos::ParameterList& plist)
     little_k_ = OPERATOR_LITTLE_K_DIVK;  // standard SPD upwind scheme
   } else if (name == "standard: cell") {
     little_k_ = OPERATOR_LITTLE_K_STANDARD;  // cell-centered scheme.
-  } else if (name == "divk: cell-grad-face-twin") {  
-    little_k_ = OPERATOR_LITTLE_K_DIVK_TWIN_GRAD;
   } else if (name == "divk: cell-face-twin") {  
     little_k_ = OPERATOR_LITTLE_K_DIVK_TWIN;  // for resolved simulation
   } else {
@@ -1442,7 +1357,7 @@ void PDE_DiffusionMFD::Init(Teuchos::ParameterList& plist)
   // verify input consistency
   if (scaled_constraint_) {
     AMANZI_ASSERT(little_k_ != OPERATOR_LITTLE_K_DIVK &&
-           little_k_ != OPERATOR_LITTLE_K_DIVK_TWIN);
+                  little_k_ != OPERATOR_LITTLE_K_DIVK_TWIN);
   }
 
   // Do we need to calculate Newton correction terms?
@@ -1560,6 +1475,7 @@ double PDE_DiffusionMFD::ComputeTransmissibility(int f) const
   } else {
     WhetStone::Tensor Kc(mesh_->space_dimension(), 1);
     Kc(0, 0) = 1.0;
+    if (const_K_.rank() > 0) Kc = const_K_;
     return mfd.Transmissibility(f, c, Kc);
   }
 }

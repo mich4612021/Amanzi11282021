@@ -23,9 +23,11 @@
 #include "VerboseObject.hh"
 
 // Operators
+#include "Op.hh"
 #include "Operator.hh"
 #include "OperatorUtils.hh"
 #include "TreeOperator.hh"
+#include "TreeVector_Utils.hh"
 
 namespace Amanzi {
 namespace Operators {
@@ -47,6 +49,17 @@ TreeOperator::TreeOperator(Teuchos::RCP<const TreeVectorSpace> tvs) :
   // resize the blocks
   int n_blocks = tvs_->size();
   blocks_.resize(n_blocks, Teuchos::Array<Teuchos::RCP<const Operator> >(n_blocks, Teuchos::null));
+}
+
+
+/* ******************************************************************
+* Constructor from a tree vector and number of blocks
+****************************************************************** */
+TreeOperator::TreeOperator(Teuchos::RCP<const TreeVectorSpace> tvs, int nblocks) :
+    tvs_(tvs),
+    block_diagonal_(false)
+{
+  blocks_.resize(nblocks, Teuchos::Array<Teuchos::RCP<const Operator> >(nblocks, Teuchos::null));
 }
 
 
@@ -82,12 +95,35 @@ int TreeOperator::Apply(const TreeVector& X, TreeVector& Y) const
 /* ******************************************************************
 * Calculate Y = A * X using matrix-free matvec on blocks of operators.
 ****************************************************************** */
+int TreeOperator::ApplyFlattened(const TreeVector& X, TreeVector& Y) const
+{
+  Y.PutScalar(0.0);
+
+  auto Xtv = collectTreeVectorLeaves_const(X);
+  auto Ytv = collectTreeVectorLeaves(Y);
+
+  int ierr(0), n(0);
+  for (auto jt = Ytv.begin(); jt != Ytv.end(); ++jt, ++n) {
+    CompositeVector& yN = *(*jt)->Data();
+    int m(0);
+    for (auto it = Xtv.begin(); it != Xtv.end(); ++it, ++m) {
+      if (blocks_[n][m] != Teuchos::null) {
+        ierr |= blocks_[n][m]->Apply(*(*it)->Data(), yN, 1.0);
+      }
+    }
+  }
+  return ierr;
+}
+
+
+/* ******************************************************************
+* Calculate Y = A * X using matrix-free matvec on blocks of operators.
+****************************************************************** */
 int TreeOperator::ApplyAssembled(const TreeVector& X, TreeVector& Y) const
 {
   Y.PutScalar(0.0);
   Epetra_Vector Xcopy(A_->RowMap());
   Epetra_Vector Ycopy(A_->RowMap());
-  double x_norm, y_norm;
 
   int ierr = CopyTreeVectorToSuperVector(*smap_, X, Xcopy);
 
@@ -247,6 +283,28 @@ void TreeOperator::InitPreconditioner(Teuchos::ParameterList& plist)
 
 
 /* ******************************************************************
+* Create preconditioner using name and a factory.
+****************************************************************** */
+void TreeOperator::InitPreconditioner(
+    Teuchos::ParameterList& plist,
+    const std::pair<int, Teuchos::RCP<std::vector<int> > >& block_ids)
+{
+  // provide block ids for block strategies.
+  if (plist.isParameter("preconditioner type") &&
+      plist.get<std::string>("preconditioner type") == "boomer amg" &&
+      plist.isSublist("boomer amg parameters")) {
+
+    plist.sublist("boomer amg parameters").set("number of unique block indices", block_ids.first);
+    plist.sublist("boomer amg parameters").set("block indices", block_ids.second);
+  }
+
+  AmanziPreconditioners::PreconditionerFactory factory;
+  preconditioner_ = factory.Create(plist);
+  preconditioner_->Update(A_);
+}
+
+
+/* ******************************************************************
 * Two-stage initialization of preconditioner, part 1.
 * Create the PC and set options.  SymbolicAssemble() must have been called.
 ****************************************************************** */
@@ -308,6 +366,29 @@ void TreeOperator::CopyVectorToSuperVector(const TreeVector& cv, Epetra_Vector& 
 void TreeOperator::CopySuperVectorToVector(const Epetra_Vector& sv, TreeVector& cv) const
 {
   CopySuperVectorToTreeVector(*smap_, sv, cv);
+}
+
+
+/* ******************************************************************
+* Populates matrix entries.
+****************************************************************** */
+std::string TreeOperator::PrintDiagnostics() const
+{
+  std::stringstream msg;
+  int n_blocks = blocks_.size();
+  for (int i = 0; i < n_blocks; ++i) {
+    for (int j = 0; j < n_blocks; ++j) {
+      auto block = blocks_[i][j];
+      if (block != Teuchos::null) {
+        msg << " block " << i << " " << j << ": ";
+        for (auto it = block->begin(); it != block->end(); ++it) {
+          msg << "<" << (*it)->schema_string << "> ";
+        }
+        msg << "\n";
+      }
+    }
+  }
+  return msg.str();
 }
 
 }  // namespace Operators

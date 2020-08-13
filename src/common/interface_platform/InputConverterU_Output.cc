@@ -51,8 +51,7 @@ Teuchos::ParameterList InputConverterU::TranslateOutput_()
   char *tagname, *text;
   std::string unit;
 
-  DOMNamedNodeMap* attr_map;
-  DOMNodeList *node_list, *children;
+  DOMNodeList *node_list;
   DOMNode* node;
 
   // get definitions node - this node MAY exist ONCE
@@ -90,7 +89,7 @@ Teuchos::ParameterList InputConverterU::TranslateOutput_()
           DOMNodeList* list = element->getElementsByTagName(mm.transcode("start"));
           node = list->item(0);
 
-          char* text = mm.transcode(node->getTextContent());
+          text = mm.transcode(node->getTextContent());
           Teuchos::Array<double> sps;
           sps.append(TimeCharToValue_(text));
 
@@ -300,7 +299,7 @@ Teuchos::ParameterList InputConverterU::TranslateOutput_()
       *vo_->os() << "Translating output: observations" << std::endl;
 
     Teuchos::ParameterList obsPL;
-    DOMNode* inode = node->getFirstChild();
+    inode = node->getFirstChild();
     while (inode != NULL) {
       if (inode->getNodeType() != DOMNode::ELEMENT_NODE) { 
         inode = inode->getNextSibling();
@@ -313,7 +312,6 @@ Teuchos::ParameterList InputConverterU::TranslateOutput_()
         obsPL.set<std::string>("observation output filename", output_prefix_ + TrimString_(text));
 
       } else if (strcmp(tagname, "units") == 0) {
-        std::string unit;
         unit = GetAttributeValueS_(inode, "time", TYPE_NONE, false, units_.system().time);
         obsPL.set<std::string>("time unit", unit);
 
@@ -370,6 +368,16 @@ Teuchos::ParameterList InputConverterU::TranslateOutput_()
             std::stringstream name;
             name << solute_name << " aqueous concentration";
             obPL.set<std::string>("variable", name.str());
+          } else if (strcmp(obs_type, "sorbed_conc") == 0) {
+            std::string solute_name = GetAttributeValueS_(jnode, "solute");
+            std::stringstream name;
+            name << solute_name << " sorbed concentration";
+            obPL.set<std::string>("variable", name.str());
+          } else if (strcmp(obs_type, "free_ion_conc") == 0) {
+            std::string solute_name = GetAttributeValueS_(jnode, "solute");
+            std::stringstream name;
+            name << solute_name << " free ion concentration";
+            obPL.set<std::string>("variable", name.str());
           } else if (strcmp(obs_type, "drawdown") == 0) {
             obPL.set<std::string>("variable", "drawdown");
           } else if (strcmp(obs_type, "perm_weighted_drawdown") == 0) {
@@ -405,7 +413,7 @@ Teuchos::ParameterList InputConverterU::TranslateOutput_()
                   obPL.set<std::string>("functional", "observation data: mean");
                 }
               } else if (strcmp(elem, "domain_name") == 0) {
-                obPL.set<std::string>("domain name", (strcmp(value, "matrix") == 0) ? "domain" : "fracture");
+                obPL.set<std::string>("domain name", (strcmp(value, "fracture") == 0) ? "fracture" : "domain");
               } else if (strcmp(elem, "interpolation") == 0) {
                 if (strcmp(value, "constant") == 0) {
                   obPL.set<std::string>("interpolation", "constant");

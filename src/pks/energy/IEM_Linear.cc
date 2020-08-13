@@ -8,11 +8,9 @@
 
   Author: Ethan Coon
 
-  Linear internal energy model -- function of cv and temperature
-
-   IE = cv * (T - Tref)
-
-  UNITS: J/{mol/kg}
+  Linear internal energy IE [J/mol] or [J/kg] model as the function 
+  of the heat capacity (cv) and relative temperature:
+    IE = cv * (T - Tref)
 */
 
 #include "IEM_Linear.hh"
@@ -32,12 +30,10 @@ double IEM_Linear::InternalEnergy(double temp) {
 
 void IEM_Linear::InitializeFromPlist_()
 {
-  if (plist_.isParameter("heat capacity [J/kg-K]")) {
-    cv_ = plist_.get<double>("heat capacity [J/kg-K]");
-    molar_basis_ = false;
+  if (plist_.isParameter("heat capacity")) {
+    cv_ = plist_.get<double>("heat capacity");
   } else {
-    cv_ = plist_.get<double>("heat capacity [J/mol-K]");
-    molar_basis_ = true;
+    cv_ = plist_.get<double>("molar heat capacity");
   }
 
   Tref_ = plist_.get<double>("reference temperature", 273.15);

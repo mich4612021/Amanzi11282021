@@ -72,7 +72,7 @@ int Operator_FaceCellSff::ApplyInverse(const CompositeVector& X, CompositeVector
 
   // apply preconditioner inversion
   const Epetra_MultiVector& Xc = *X.ViewComponent("cell");
-  const Epetra_MultiVector& Xf = *X.ViewComponent("face", true);
+  // const Epetra_MultiVector& Xf = *X.ViewComponent("face", true);
 
   // Temporary cell and face vectors.
   CompositeVector T(X);
@@ -306,6 +306,14 @@ void Operator_FaceCellSff::SymbolicAssembleMatrixOp(const Op_Cell_FaceCell& op,
   std::string name = "Sff alt CELL_FACE";
   Op_Cell_Face schur_op(name, mesh_);
   Operator_FaceCell::SymbolicAssembleMatrixOp(schur_op, map, graph, my_block_row, my_block_col);
+}
+
+
+/* ******************************************************************
+* Copy constructor.
+****************************************************************** */
+Teuchos::RCP<Operator> Operator_FaceCellSff::Clone() const {
+  return Teuchos::rcp(new Operator_FaceCellSff(*this));
 }
 
 }  // namespace Operators
