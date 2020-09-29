@@ -9,6 +9,8 @@
   Self-registering factory for chemistry PKs.
 */
 
+#ifdef ALQUIMIA_ENABLED
+
 #include "Alquimia_PK.hh"
 #include "Amanzi_PK.hh"
 
@@ -20,3 +22,5 @@ RegisteredPKFactory<Amanzi_PK> Amanzi_PK::reg_("chemistry amanzi");
 
 }  // namespace AmanziChemistry
 }  // namespace Amanzi
+
+#endif 
