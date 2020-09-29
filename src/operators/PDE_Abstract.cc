@@ -87,9 +87,6 @@ void PDE_Abstract::Init_(Teuchos::ParameterList& plist)
     Teuchos::RCP<CompositeVectorSpace> cvs_col = Teuchos::rcp(new CompositeVectorSpace(cvsFromSchema(global_schema_col_, mesh_, true)));
 
     global_op_ = Teuchos::rcp(new Operator_Schema(cvs_row, cvs_col, plist, global_schema_row_, global_schema_col_));
-    if (local_schema_col_.base() == AmanziMesh::CELL) {
-      local_op_ = Teuchos::rcp(new Op_Cell_Schema(global_schema_row_, global_schema_col_, mesh_));
-    }
 
   } else {
     // constructor was given an Operator
@@ -99,11 +96,10 @@ void PDE_Abstract::Init_(Teuchos::ParameterList& plist)
     mesh_ = global_op_->DomainMap().Mesh();
     local_schema_row_.Init(mfd_range, mesh_, base);
     local_schema_col_.Init(mfd_domain, mesh_, base);
-
-    local_op_ = Teuchos::rcp(new Op_Cell_Schema(global_schema_row_, global_schema_col_, mesh_));
   }
 
   // register the advection Op
+  local_op_ = Teuchos::rcp(new Op_Cell_Schema(global_schema_row_, global_schema_col_, mesh_));
   global_op_->OpPushBack(local_op_);
 
   // default values
@@ -154,14 +150,39 @@ void PDE_Abstract::UpdateMatrices(const Teuchos::Ptr<const CompositeVector>& u,
       matrix[c] = AcellT;
     }
   } else if (matrix_ == "advection" && coef_type_ == CoefType::CONSTANT) {
-    const Epetra_MultiVector& u_c = *u->ViewComponent("cell", false);
+    if (u->HasComponent("cell")) {
+      const Epetra_MultiVector& u_c = *u->ViewComponent("cell", false);
 
-    for (int c = 0; c < ncells_owned; ++c) {
-      AmanziGeometry::Point vc(d);
-      for (int i = 0; i < d; ++i) vc[i] = u_c[i][c];
+      for (int c = 0; c < ncells_owned; ++c) {
+        AmanziGeometry::Point vc(d);
+        for (int i = 0; i < d; ++i) vc[i] = u_c[i][c];
 
-      mfd_->AdvectionMatrix(c, vc, Acell, grad_on_test_);
-      matrix[c] = Acell;
+        mfd_->AdvectionMatrix(c, vc, Acell, grad_on_test_);
+        matrix[c] = Acell;
+      }
+    } else if (u->HasComponent("node")) {
+      u->ScatterMasterToGhosted();
+      const Epetra_MultiVector& u_c = *u->ViewComponent("node", true);
+
+      AmanziMesh::Entity_ID_List nodes;
+
+      for (int c = 0; c < ncells_owned; ++c) {
+        mesh_->cell_get_nodes(c, &nodes);
+
+        AmanziGeometry::Point vn(d);
+        std::vector<AmanziGeometry::Point> vec;
+
+        for (int n = 0; n < nodes.size(); ++n) {
+          int v = nodes[n];
+          for (int i = 0; i < d; ++i) vn[i] = u_c[i][v];
+          vec.push_back(vn);
+        }
+        
+        mfd_->AdvectionMatrix(c, vec, Acell);
+        matrix[c] = Acell;
+      }
+    } else {
+      AMANZI_ASSERT(false);
     }
   } else if (matrix_ == "advection" && coef_type_ == CoefType::VECTOR_POLYNOMIAL) {
     for (int c = 0; c < ncells_owned; ++c) {

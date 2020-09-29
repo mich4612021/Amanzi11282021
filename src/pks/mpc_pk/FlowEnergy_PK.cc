@@ -64,7 +64,6 @@ void FlowEnergy_PK::Setup(const Teuchos::Ptr<State>& S)
 
   energy_key_ = Keys::getKey(domain_, "energy");
   prev_energy_key_ = Keys::getKey(domain_, "prev_energy");
-  effective_pressure_key_ = Keys::getKey(domain_, "effective_pressure");
 
   mol_density_liquid_key_ = Keys::getKey(domain_, "molar_density_liquid");
   mol_density_gas_key_ = Keys::getKey(domain_, "molar_density_gas");
@@ -143,6 +142,12 @@ void FlowEnergy_PK::Setup(const Teuchos::Ptr<State>& S)
          .set<double>("molar heat capacity", 76.0);
   }
 
+  S->RequireField(ie_liquid_key_, ie_liquid_key_)->SetMesh(mesh_)->SetGhosted(true)
+    ->AddComponent("cell", AmanziMesh::CELL, 1)
+    ->AddComponent("boundary_face", AmanziMesh::BOUNDARY_FACE, 1);
+  S->RequireFieldEvaluator(ie_liquid_key_);
+
+
   // -- molar and mass density
   if (!S->HasField(mol_density_liquid_key_) && !elist.isSublist(mol_density_liquid_key_)) {
     elist.sublist(mol_density_liquid_key_)
@@ -151,15 +156,15 @@ void FlowEnergy_PK::Setup(const Teuchos::Ptr<State>& S)
          .set<std::string>("molar density key", mol_density_liquid_key_)
          .set<std::string>("mass density key", mass_density_liquid_key_);
     elist.sublist(mol_density_liquid_key_).sublist("EOS parameters")
-         .set<std::string>("eos type", "liquid water");
+         .set<std::string>("eos type", "liquid water 0-30C");
     elist.sublist(mol_density_liquid_key_)
          .sublist("verbose object").set<std::string>("verbosity level", "medium");
-
-    S->RequireField(mol_density_liquid_key_, mol_density_liquid_key_)->SetMesh(mesh_)->SetGhosted(true)
-      ->SetComponent("cell", AmanziMesh::CELL, 1);
-    S->RequireFieldEvaluator(mol_density_liquid_key_);
-    S->RequireFieldEvaluator(mass_density_liquid_key_);
   }
+
+  S->RequireField(mol_density_liquid_key_)->SetMesh(mesh_)->SetGhosted(true)
+    ->AddComponent("cell", AmanziMesh::CELL, 1)
+    ->AddComponent("boundary_face", AmanziMesh::BOUNDARY_FACE, 1);
+  S->RequireFieldEvaluator(mol_density_liquid_key_);
 
   // -- viscosity model
   if (!S->HasField(viscosity_liquid_key_) && !elist.isSublist(viscosity_liquid_key_)) {
@@ -174,17 +179,6 @@ void FlowEnergy_PK::Setup(const Teuchos::Ptr<State>& S)
     S->RequireField(viscosity_liquid_key_, viscosity_liquid_key_)->SetMesh(mesh_)->SetGhosted(true)
       ->SetComponent("cell", AmanziMesh::CELL, 1);
     S->RequireFieldEvaluator(viscosity_liquid_key_);
-  }
-
-  // Other fields
-  if (!S->HasField(effective_pressure_key_) && !elist.isSublist(effective_pressure_key_)) {
-    elist.sublist(effective_pressure_key_)
-         .set<std::string>("field evaluator type", "effective_pressure");
-
-    S->RequireField(effective_pressure_key_, effective_pressure_key_)->SetMesh(mesh_)->SetGhosted(true)
-      ->SetComponent("cell", AmanziMesh::CELL, 1);
-    S->RequireFieldEvaluator(effective_pressure_key_);
-    S->GetField(effective_pressure_key_, effective_pressure_key_)->set_io_vis(false);
   }
 
   // inform other PKs about strong coupling
@@ -225,12 +219,12 @@ void FlowEnergy_PK::Initialize(const Teuchos::Ptr<State>& S)
   tvs->PushBack(CreateTVSwithOneLeaf(op1->DomainMap()));
 
   op_tree_matrix_ = Teuchos::rcp(new Operators::TreeOperator(tvs));
-  op_tree_matrix_->SetOperatorBlock(0, 0, op0);
-  op_tree_matrix_->SetOperatorBlock(1, 1, op1);
+  op_tree_matrix_->set_operator_block(0, 0, op0);
+  op_tree_matrix_->set_operator_block(1, 1, op1);
 
   op_tree_pc_ = Teuchos::rcp(new Operators::TreeOperator(tvs));
-  op_tree_pc_->SetOperatorBlock(0, 0, sub_pks_[0]->my_operator(Operators::OPERATOR_PRECONDITIONER_RAW));
-  op_tree_pc_->SetOperatorBlock(1, 1, sub_pks_[1]->my_operator(Operators::OPERATOR_PRECONDITIONER_RAW));
+  op_tree_pc_->set_operator_block(0, 0, sub_pks_[0]->my_operator(Operators::OPERATOR_PRECONDITIONER_RAW));
+  op_tree_pc_->set_operator_block(1, 1, sub_pks_[1]->my_operator(Operators::OPERATOR_PRECONDITIONER_RAW));
 
   op_tree_rhs_ = Teuchos::rcp(new TreeVector());
   op_tree_rhs_->PushBack(CreateTVwithOneLeaf(op0->rhs()));
@@ -239,9 +233,12 @@ void FlowEnergy_PK::Initialize(const Teuchos::Ptr<State>& S)
   // output of initialization statistics
   if (vo_->getVerbLevel() >= Teuchos::VERB_MEDIUM) {
     Teuchos::OSTab tab = vo_->getOSTab();
-    *vo_->os() << std::endl << vo_->color("green")
-               << op_tree_matrix()->PrintDiagnostics() << std::endl
-               << "Initialization of PK is complete: my dT=" << get_dt() 
+    *vo_->os() << std::endl 
+               << "matrix:" << std::endl
+               << op_tree_matrix_->PrintDiagnostics() << std::endl
+               << "preconditioner:" << std::endl
+               << op_tree_pc_->PrintDiagnostics() << std::endl
+               << vo_->color("green") << "Initialization of PK is complete: my dT=" << get_dt() 
                << vo_->reset() << std::endl << std::endl;
   }
 

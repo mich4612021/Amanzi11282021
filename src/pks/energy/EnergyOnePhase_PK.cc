@@ -74,12 +74,13 @@ void EnergyOnePhase_PK::Setup(const Teuchos::Ptr<State>& S)
   // -- advection of enthalpy
   if (!S->HasField(enthalpy_key_)) {
     S->RequireField(enthalpy_key_)->SetMesh(mesh_)
-      ->SetGhosted()->AddComponent("cell", AmanziMesh::CELL, 1);
+      ->SetGhosted()->AddComponent("cell", AmanziMesh::CELL, 1)
+      ->SetGhosted()->AddComponent("boundary_face", AmanziMesh::BOUNDARY_FACE, 1);
 
     Teuchos::ParameterList elist = ep_list_->sublist("enthalpy evaluator");
     elist.set("enthalpy key", enthalpy_key_);
 
-    Teuchos::RCP<EnthalpyEvaluator> enth = Teuchos::rcp(new EnthalpyEvaluator(elist));
+    auto enth = Teuchos::rcp(new EnthalpyEvaluator(elist));
     S->SetFieldEvaluator(enthalpy_key_, enth);
   }
 
@@ -91,7 +92,7 @@ void EnergyOnePhase_PK::Setup(const Teuchos::Ptr<State>& S)
     Teuchos::ParameterList elist = ep_list_->sublist("thermal conductivity evaluator");
     elist.set("thermal conductivity key", conductivity_key_);
 
-    Teuchos::RCP<TCMEvaluator_OnePhase> tcm = Teuchos::rcp(new TCMEvaluator_OnePhase(elist));
+    auto tcm = Teuchos::rcp(new TCMEvaluator_OnePhase(elist));
     S->SetFieldEvaluator(conductivity_key_, tcm);
   }
 }
@@ -144,13 +145,13 @@ void EnergyOnePhase_PK::Initialize(const Teuchos::Ptr<State>& S)
   op_acc_ = Teuchos::rcp(new Operators::PDE_Accumulation(AmanziMesh::CELL, op_preconditioner_));
   op_preconditioner_advection_ = opfactory_adv.Create(oplist_adv, op_preconditioner_);
   op_preconditioner_advection_->SetBCs(op_bc_enth_, op_bc_enth_);
-  op_preconditioner_->SymbolicAssembleMatrix();
 
   // initialize preconditioner
   AMANZI_ASSERT(ti_list_->isParameter("preconditioner"));
   std::string name = ti_list_->get<std::string>("preconditioner");
   Teuchos::ParameterList slist = preconditioner_list_->sublist(name);
-  op_preconditioner_->InitializePreconditioner(slist);
+  op_preconditioner_->set_inverse_parameters(slist);
+  op_preconditioner_->InitializeInverse();
 
   // initialize time integrator
   std::string ti_method_name = ti_list_->get<std::string>("time integration method", "none");
@@ -164,20 +165,26 @@ void EnergyOnePhase_PK::Initialize(const Teuchos::Ptr<State>& S)
   }
 
   // initialize boundary conditions
-  dt_ = 0.0;  // no other reasonable estimate
   double t_ini = S->time(); 
   auto temperature = *S->GetFieldData(temperature_key_, passwd_);
   UpdateSourceBoundaryData(t_ini, t_ini, temperature);
 
-  // output of initialization header
+  // output of initialization summary
   if (vo_->getVerbLevel() >= Teuchos::VERB_MEDIUM) {
     Teuchos::OSTab tab = vo_->getOSTab();
-    *vo_->os() << "temperature BC assigned to " << dirichlet_bc_faces_ << " faces" << std::endl;
-    *vo_->os() << std::endl << vo_->color("green")
-               << "matrix: " << my_operator(Operators::OPERATOR_MATRIX)->PrintDiagnostics() << std::endl
+    *vo_->os() << "temperature BC assigned to " << dirichlet_bc_faces_ << " faces\n\n"
+               << "solution vector: ";
+    solution->Print(*vo_->os(), false);
+    *vo_->os() << "matrix: " << my_operator(Operators::OPERATOR_MATRIX)->PrintDiagnostics() << std::endl
                << "preconditioner: " << my_operator(Operators::OPERATOR_PRECONDITIONER_RAW)->PrintDiagnostics() << std::endl
-               << "Initialization of PK is complete: my dT=" << get_dt()
+               << vo_->color("green") << "Initialization of PK is complete: my dT=" << get_dt()
                << vo_->reset() << std::endl;
+  }
+
+  if (dirichlet_bc_faces_ == 0 &&
+      domain_ == "domain" && vo_->getVerbLevel() >= Teuchos::VERB_LOW) {
+    Teuchos::OSTab tab = vo_->getOSTab();
+    *vo_->os() << "WARNING: no essential boundary conditions, solver may fail" << std::endl;
   }
 }
 

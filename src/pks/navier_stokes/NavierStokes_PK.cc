@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "PK_DomainFunctionFactory.hh"
-#include "LinearOperatorFactory.hh"
 
 // Amanzi::NavierStokes
 #include "NavierStokes_PK.hh"
@@ -116,9 +115,9 @@ void NavierStokes_PK::Setup(const Teuchos::Ptr<State>& S)
   }
 
   // -- viscosity: if not requested by any PK, we request its constant value.
-  if (!S->HasField("fluid_viscosity")) {
-    if (!S->HasField("fluid_viscosity")) {
-      S->RequireScalar("fluid_viscosity", passwd_);
+  if (!S->HasField("const_fluid_viscosity")) {
+    if (!S->HasField("const_fluid_viscosity")) {
+      S->RequireScalar("const_fluid_viscosity", passwd_);
     }
   }
 }
@@ -204,20 +203,20 @@ void NavierStokes_PK::Initialize(const Teuchos::Ptr<State>& S)
   Teuchos::ParameterList& tmp4 = ns_list_->sublist("operators")
                                           .sublist("advection operator");
   op_matrix_conv_ = Teuchos::rcp(new Operators::PDE_Abstract(tmp4, op_matrix_elas_->global_operator()));
-  op_preconditioner_conv_ = Teuchos::rcp(new Operators::PDE_Abstract(tmp3, op_preconditioner_elas_->global_operator()));
+  op_preconditioner_conv_ = Teuchos::rcp(new Operators::PDE_Abstract(tmp4, op_preconditioner_elas_->global_operator()));
 
   // -- create pressure block (for preconditioner)
   op_mass_ = Teuchos::rcp(new Operators::PDE_Accumulation(AmanziMesh::CELL, mesh_));
 
   // -- matrix and preconditioner
   op_matrix_ = Teuchos::rcp(new Operators::TreeOperator(Teuchos::rcpFromRef(soln_->Map())));
-  op_matrix_->SetOperatorBlock(0, 0, op_matrix_elas_->global_operator());
-  op_matrix_->SetOperatorBlock(1, 0, op_matrix_div_->global_operator());
-  op_matrix_->SetOperatorBlock(0, 1, op_matrix_grad_->global_operator());
+  op_matrix_->set_operator_block(0, 0, op_matrix_elas_->global_operator());
+  op_matrix_->set_operator_block(1, 0, op_matrix_div_->global_operator());
+  op_matrix_->set_operator_block(0, 1, op_matrix_grad_->global_operator());
 
   op_preconditioner_ = Teuchos::rcp(new Operators::TreeOperator(Teuchos::rcpFromRef(soln_->Map())));
-  op_preconditioner_->SetOperatorBlock(0, 0, op_preconditioner_elas_->global_operator());
-  op_preconditioner_->SetOperatorBlock(1, 1, op_mass_->global_operator());
+  op_preconditioner_->set_operator_block(0, 0, op_preconditioner_elas_->global_operator());
+  op_preconditioner_->set_operator_block(1, 1, op_mass_->global_operator());
 
   // Create BC objects
   Teuchos::RCP<NavierStokesBoundaryFunction> bc;
@@ -228,7 +227,7 @@ void NavierStokes_PK::Initialize(const Teuchos::Ptr<State>& S)
 
   // -- velocity
   if (bc_list->isSublist("velocity")) {
-    PK_DomainFunctionFactory<NavierStokesBoundaryFunction > bc_factory(mesh_);
+    PK_DomainFunctionFactory<NavierStokesBoundaryFunction> bc_factory(mesh_);
 
     Teuchos::ParameterList& tmp_list = bc_list->sublist("velocity");
     for (auto it = tmp_list.begin(); it != tmp_list.end(); ++it) {
@@ -253,7 +252,7 @@ void NavierStokes_PK::Initialize(const Teuchos::Ptr<State>& S)
 
   // Populate matrix and preconditioner
   // -- setup phase
-  double mu = *S_->GetScalarData("fluid_viscosity", passwd_);
+  double mu = *S_->GetScalarData("const_fluid_viscosity", passwd_);
   op_matrix_elas_->global_operator()->Init();
   op_matrix_elas_->SetTensorCoefficient(mu);
 
@@ -291,29 +290,38 @@ void NavierStokes_PK::Initialize(const Teuchos::Ptr<State>& S)
 
   op_preconditioner_elas_->UpdateMatrices();
   op_preconditioner_elas_->ApplyBCs(true, true, true);
-  op_preconditioner_elas_->global_operator()->SymbolicAssembleMatrix();
+
+  std::string pc_name = ti_list_->get<std::string>("preconditioner");
+  op_preconditioner_elas_->global_operator()->set_inverse_parameters(pc_name, *preconditioner_list_);
 
   CompositeVector vol(op_mass_->global_operator()->DomainMap());
   vol.PutScalar(1.0 / mu);
   op_mass_->AddAccumulationTerm(vol, 1.0, "cell");
-  op_mass_->global_operator()->SymbolicAssembleMatrix();
+  op_mass_->global_operator()->set_inverse_parameters("Diagonal", *preconditioner_list_);
 
   // -- generic linear solver for most cases
   solver_name_ = ti_list_->get<std::string>("linear solver");
 
-  // -- preconditioner or encapsulated preconditioner
-  std::string pc_name = ti_list_->get<std::string>("preconditioner");
-  Teuchos::ParameterList pc_list = preconditioner_list_->sublist(pc_name);
-  op_preconditioner_elas_->global_operator()->InitializePreconditioner(pc_list);
-  
-  op_pc_solver_ = op_preconditioner_;
-
+  Teuchos::ParameterList inv_list;
+  inv_list.set("preconditioning method", "block diagonal");
   if (ti_list_->isParameter("preconditioner enhancement")) {
     std::string tmp_solver = ti_list_->get<std::string>("preconditioner enhancement");
-    if (tmp_solver != "none") {
-      AmanziSolvers::LinearOperatorFactory<Operators::TreeOperator, TreeVector, TreeVectorSpace> sfactory;
-      op_pc_solver_ = sfactory.Create(tmp_solver, *linear_solver_list_, op_preconditioner_);
-    }
+    inv_list.setParameters(linear_solver_list_->sublist(tmp_solver));
+  }
+  op_preconditioner_->set_inverse_parameters(inv_list);
+
+  // summary of initialization
+  if (vo_->getVerbLevel() >= Teuchos::VERB_MEDIUM) {
+    Teuchos::OSTab tab = vo_->getOSTab();
+    *vo_->os() << " TI:\"" << ti_method_name.c_str() << "\"" << std::endl
+               << "matrix:\n" << op_matrix_->PrintDiagnostics() << std::endl
+               << "precon:\n" << op_preconditioner_->PrintDiagnostics() << std::endl;
+
+    // *vo_->os() << "pressure BC assigned to " << dirichlet_bc_faces_ << " faces" << std::endl;
+    // *vo_->os() << "default (no-flow) BC assigned to " << missed_bc_faces_ << " faces" << std::endl << std::endl;
+
+    *vo_->os() << vo_->color("green") << "Initialization of PK is complete, T=" 
+               << units_.OutputTime(S_->time()) << vo_->reset() << std::endl << std::endl;
   }
 }
 
@@ -346,7 +354,7 @@ bool NavierStokes_PK::AdvanceStep(double t_old, double t_new, bool reinit)
   if (failed) {
     dt_ = dt_next_;
 
-    // revover the original primary solution
+    // recover the original primary solution
     *S_->GetFieldData("pressure", passwd_) = pressure_copy;
     pressure_eval_->SetFieldAsChanged(S_.ptr());
 

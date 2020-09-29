@@ -42,6 +42,10 @@ Teuchos::ParameterList InputConverterU::TranslatePreconditioners_()
   out_list.sublist("Trilinos ML") = TranslateTrilinosML_();
   out_list.sublist("Hypre AMG") = TranslateHypreAMG_();
   out_list.sublist("Block ILU") = TranslateBILU_();
+  if (multiphase_) {
+    out_list.sublist("Euclid") = TranslateEuclid_();
+  }
+
   return out_list;
 }
 
@@ -94,6 +98,13 @@ Teuchos::ParameterList InputConverterU::TranslateSolvers_()
       method_list.sublist("verbose object").set<std::string>("verbosity level", "low");
     }
   }
+
+  // direct solver
+  Teuchos::ParameterList& amesos_list = out_list.sublist("AMESOS");
+  amesos_list.set<std::string>("direct method", "amesos");
+  amesos_list.sublist("amesos parameters")
+      .template set<std::string>("solver name", "basker")
+      .template set<int>("amesos version", 2);
 
   return out_list;
 }
@@ -171,7 +182,7 @@ Teuchos::ParameterList InputConverterU::TranslateLinearSolvers_(
 Teuchos::ParameterList InputConverterU::TranslateTrilinosML_()
 {
   Teuchos::ParameterList out_list;
-  out_list.set<std::string>("preconditioner type", "ml");
+  out_list.set<std::string>("preconditioning method", "ml");
 
   MemoryManager mm;
 
@@ -231,7 +242,7 @@ Teuchos::ParameterList InputConverterU::TranslateTrilinosML_()
 Teuchos::ParameterList InputConverterU::TranslateBILU_()
 {
   Teuchos::ParameterList out_list;
-  out_list.set<std::string>("preconditioner type", "block ilu");
+  out_list.set<std::string>("preconditioning method", "block ilu");
 
   MemoryManager mm;
 
@@ -285,7 +296,7 @@ Teuchos::ParameterList InputConverterU::TranslateBILU_()
 Teuchos::ParameterList InputConverterU::TranslateHypreAMG_()
 {
   Teuchos::ParameterList out_list;
-  out_list.set<std::string>("preconditioner type", "boomer amg");
+  out_list.set<std::string>("preconditioning method", "boomer amg");
 
   MemoryManager mm;
 
@@ -337,6 +348,24 @@ Teuchos::ParameterList InputConverterU::TranslateHypreAMG_()
   } else {
     amg_list.set<int>("relaxation type", 3);
   }
+
+  return out_list;
+}
+
+
+/* ******************************************************************
+* Euclid sublist
+****************************************************************** */
+Teuchos::ParameterList InputConverterU::TranslateEuclid_()
+{
+  Teuchos::ParameterList out_list;
+  out_list.set<std::string>("preconditioning method", "euclid");
+
+  out_list.sublist("euclid parameters")
+      .set<int>("ilu(k) fill level", 5)
+      // .set<double>("ILUT drop tolerance", 0.000001)
+      .set<bool>("rescale rows", true)
+      .set<int>("verbosity", 0);
 
   return out_list;
 }

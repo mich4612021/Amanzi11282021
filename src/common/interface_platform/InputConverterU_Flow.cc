@@ -91,7 +91,7 @@ Teuchos::ParameterList InputConverterU::TranslateFlow_(const std::string& mode, 
         .set<std::string>("limiter", "Barth-Jespersen");
     flow_list = &out_list;
 
-    out_list.sublist("water retention models") = TranslateWRM_();
+    out_list.sublist("water retention models") = TranslateWRM_("flow");
     out_list.sublist("porosity models") = TranslatePOM_();
     if (out_list.sublist("porosity models").numParams() > 0) {
       flow_list->sublist("physical models and assumptions")
@@ -204,7 +204,7 @@ Teuchos::ParameterList InputConverterU::TranslateFlow_(const std::string& mode, 
 /* ******************************************************************
 * Create list of water retention models.
 ****************************************************************** */
-Teuchos::ParameterList InputConverterU::TranslateWRM_()
+Teuchos::ParameterList InputConverterU::TranslateWRM_(const std::string& pk_name)
 {
   Teuchos::ParameterList out_list;
 
@@ -228,14 +228,17 @@ Teuchos::ParameterList InputConverterU::TranslateWRM_()
     DOMNode* inode = children->item(i); 
 
     node = GetUniqueElementByTagsString_(inode, "cap_pressure", flag);
-    model = GetAttributeValueS_(node, "model", "van_genuchten, brooks_corey");
+    model = GetAttributeValueS_(node, "model", "van_genuchten, brooks_corey, saturated");
     DOMNode* nnode = GetUniqueElementByTagsString_(node, "parameters", flag);
     DOMElement* element_cp = static_cast<DOMElement*>(nnode);
 
     node = GetUniqueElementByTagsString_(inode, "rel_perm", flag);
-    rel_perm = GetAttributeValueS_(node, "model", "mualem, burdine");
-    DOMNode* mnode = GetUniqueElementByTagsString_(node, "exp", flag);
-    DOMElement* element_rp = (flag) ? static_cast<DOMElement*>(mnode) : NULL;
+    DOMElement* element_rp = NULL;
+    if (flag) {
+      rel_perm = GetAttributeValueS_(node, "model", "mualem, burdine");
+      DOMNode* mnode = GetUniqueElementByTagsString_(node, "exp", flag);
+      element_rp = static_cast<DOMElement*>(mnode);
+    }
 
     // common stuff
     // -- assigned regions
@@ -247,30 +250,38 @@ Teuchos::ParameterList InputConverterU::TranslateWRM_()
         element_cp, "optional_krel_smoothing_interval", TYPE_NUMERICAL, 0.0, DVAL_MAX, "", false, 0.0);
 
     // -- ell
-    double ell, ell_d = (rel_perm == "mualem") ? ELL_MUALEM : ELL_BURDINE;
-    ell = GetAttributeValueD_(element_rp, "value", TYPE_NUMERICAL, 0.0, 10.0, "", false, ell_d);
+    double ell(0.0);
+    if (element_rp != NULL) {
+      double ell_d = (rel_perm == "mualem") ? ELL_MUALEM : ELL_BURDINE;
+      ell = GetAttributeValueD_(element_rp, "value", TYPE_NUMERICAL, 0.0, 10.0, "", false, ell_d);
+    }
 
     std::replace(rel_perm.begin(), rel_perm.begin() + 1, 'm', 'M');
     std::replace(rel_perm.begin(), rel_perm.begin() + 1, 'b', 'B');
+
+    std::stringstream ss;
+    ss << "WRM_" << i;
+    Teuchos::ParameterList& wrm_list = out_list.sublist(ss.str());
 
     if (strcmp(model.c_str(), "van_genuchten") == 0) {
       double alpha = GetAttributeValueD_(element_cp, "alpha", TYPE_NUMERICAL, 0.0, DVAL_MAX, "Pa^-1");
       double sr = GetAttributeValueD_(element_cp, "sr", TYPE_NUMERICAL, 0.0, 1.0, "-");
       double m = GetAttributeValueD_(element_cp, "m", TYPE_NUMERICAL, 0.0, DVAL_MAX, "-");
 
-      std::stringstream ss;
-      ss << "WRM_" << i;
-
-      Teuchos::ParameterList& wrm_list = out_list.sublist(ss.str());
-
       wrm_list.set<std::string>("water retention model", "van Genuchten")
           .set<Teuchos::Array<std::string> >("regions", regions)
           .set<double>("van Genuchten m", m)
+          .set<double>("van Genuchten n", 1.0 / (1 - m))
           .set<double>("van Genuchten l", ell)
           .set<double>("van Genuchten alpha", alpha)
-          .set<double>("residual saturation", sr)
-          .set<double>("regularization interval", krel_smooth)
+          .set<double>("residual saturation liquid", sr)
           .set<std::string>("relative permeability model", rel_perm);
+      if (pk_name == "flow") {
+        wrm_list.set<double>("regularization interval", krel_smooth);
+      } else if (pk_name == "multiphase") {
+        wrm_list.set<double>("regularization interval kr", krel_smooth)
+                .set<double>("regularization interval pc", krel_smooth);
+      }
       
       if (vo_->getVerbLevel() >= Teuchos::VERB_HIGH) {
         Teuchos::ParameterList& file_list = wrm_list.sublist("output");
@@ -285,17 +296,12 @@ Teuchos::ParameterList InputConverterU::TranslateWRM_()
       double alpha = GetAttributeValueD_(element_cp, "alpha", TYPE_NUMERICAL, DVAL_MIN, DVAL_MAX, "Pa^-1");
       double sr = GetAttributeValueD_(element_cp, "sr", TYPE_NUMERICAL, 0.0, 1.0);
 
-      std::stringstream ss;
-      ss << "WRM_" << i;
-
-      Teuchos::ParameterList& wrm_list = out_list.sublist(ss.str());
-
       wrm_list.set<std::string>("water retention model", "Brooks Corey")
           .set<Teuchos::Array<std::string> >("regions", regions)
           .set<double>("Brooks Corey lambda", lambda)
           .set<double>("Brooks Corey alpha", alpha)
           .set<double>("Brooks Corey l", ell)
-          .set<double>("residual saturation", sr)
+          .set<double>("residual saturation liquid", sr)
           .set<double>("regularization interval", krel_smooth)
           .set<std::string>("relative permeability model", rel_perm);
 
@@ -307,6 +313,9 @@ Teuchos::ParameterList InputConverterU::TranslateWRM_()
 
         *vo_->os() << "water retention curve file:" << name << std::endl;
       }
+    } else if (strcmp(model.c_str(), "saturated") == 0) {
+      wrm_list.set<std::string>("water retention model", "saturated")
+          .set<Teuchos::Array<std::string> >("regions", regions);
     }
   }
 
@@ -498,9 +507,9 @@ Teuchos::ParameterList InputConverterU::TranslateFlowMSM_()
           .set<double>("van Genuchten m", m)
           .set<double>("van Genuchten l", ell)
           .set<double>("van Genuchten alpha", alpha)
-          .set<double>("residual saturation", sr)
+          .set<double>("residual saturation liquid", sr)
           .set<std::string>("relative permeability model", rel_perm);
-    } else if (strcmp(model.c_str(), "brooks_corey")) {
+    } else if (strcmp(model.c_str(), "brooks_corey") == 0) {
       double lambda = GetAttributeValueD_(element_cp, "lambda", TYPE_NUMERICAL, 0.0, DVAL_MAX);
       double alpha = GetAttributeValueD_(element_cp, "alpha", TYPE_NUMERICAL, 0.0, DVAL_MAX, "Pa^-1");
       double sr = GetAttributeValueD_(element_cp, "sr", TYPE_NUMERICAL, 0.0, 1.0);
@@ -509,7 +518,7 @@ Teuchos::ParameterList InputConverterU::TranslateFlowMSM_()
           .set<double>("Brooks Corey lambda", lambda)
           .set<double>("Brooks Corey alpha", alpha)
           .set<double>("Brooks Corey l", ell)
-          .set<double>("residual saturation", sr)
+          .set<double>("residual saturation liquid", sr)
           .set<std::string>("relative permeability model", rel_perm);
     }
   }

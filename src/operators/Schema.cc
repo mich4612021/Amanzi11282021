@@ -199,24 +199,16 @@ std::string Schema::KindToString(AmanziMesh::Entity_kind kind) const
 /* ******************************************************************
 * Returns standard mesh id for geometric location of DOF.
 ****************************************************************** */
-AmanziMesh::Entity_kind Schema::StringToKind(std::string& name) const 
+AmanziMesh::Entity_kind Schema::StringToKind(const std::string& name) const 
 {
-  if (name == "node") {
-    return AmanziMesh::NODE;
-  } else if (name == "edge") {
-    return AmanziMesh::EDGE;
-  } else if (name == "face") {
-    return AmanziMesh::FACE;
-  } else if (name == "cell") {
-    return AmanziMesh::CELL;
-  }
+  return AmanziMesh::entity_kind(name);
 }
 
 
 /* ******************************************************************
 * Returns standard mesh id for geometric location of DOF.
 ****************************************************************** */
-WhetStone::DOF_Type Schema::StringToType(std::string& name) const 
+WhetStone::DOF_Type Schema::StringToType(const std::string& name) const 
 {
   if (name == "scalar") {
     return WhetStone::DOF_Type::SCALAR;
@@ -247,7 +239,6 @@ std::string Schema::CreateUniqueName() const
     name.append(c);
     name.append(KindToString(kind)); 
     name.append(std::to_string(num)); 
-    c = "+";
   }
 
   std::transform(name.begin(), name.end(), name.begin(), ::toupper);

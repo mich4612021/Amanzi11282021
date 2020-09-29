@@ -98,7 +98,7 @@ std::cout << "Passed EPK.Initilize()" << std::endl;
   std::string passwd("thermal");
   Epetra_MultiVector& temperature = *S->GetFieldData("temperature", passwd)->ViewComponent("cell");
   temperature.PutScalar(273.0);
-  EPK->temperature_eval()->SetFieldAsChanged(S.ptr());
+  Teuchos::rcp_static_cast<PrimaryVariableFieldEvaluator>(S->GetFieldEvaluator("temperature"))->SetFieldAsChanged(S.ptr());
 
   // compute conductivity
   EPK->UpdateConductivityData(S.ptr());
@@ -186,8 +186,9 @@ std::cout << "Passed EPK.Initilize()" << std::endl;
   // Teuchos::RCP<Operator> op3 = Teuchos::rcp(new Operator(*op2));
 
   Teuchos::ParameterList slist = plist->sublist("preconditioners").sublist("Hypre AMG");
-  op->InitializePreconditioner(slist);
-  op->UpdatePreconditioner();
+  op->set_inverse_parameters(slist);
+  op->InitializeInverse();
+  op->ComputeInverse();
 
   if (MyPID == 0) {
     GMV::open_data_file(*mesh, (std::string)"energy.gmv");

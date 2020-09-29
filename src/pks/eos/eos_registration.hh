@@ -11,17 +11,17 @@
   Self-registering factory of EOS models.
 */
 
-#include "EffectivePressureEvaluator.hh"
 #include "EOSFactory.hh"
 #include "EOSEvaluator.hh"
 #include "EOS_Constant.hh"
 #include "EOS_IdealGas.hh"
 #include "EOS_VaporInGas.hh"
 #include "EOS_Water.hh"
+#include "EOS_WaterFEHM.hh"
 #include "IsobaricEOSEvaluator.hh"
 #include "MolarFractionGasEvaluator.hh"
-#include "VaporPressure_Water.hh"
-#include "VaporPressureBaseFactory.hh"
+#include "SaturatedVaporPressure_Water.hh"
+#include "SaturatedVaporPressureFactory.hh"
 #include "Viscosity_Constant.hh"
 #include "Viscosity_Water.hh"
 #include "ViscosityBaseFactory.hh"
@@ -32,7 +32,6 @@ namespace AmanziEOS {
 
 // registry of method
 Utils::RegisteredFactory<FieldEvaluator, EOSEvaluator> EOSEvaluator::factory_("eos");
-Utils::RegisteredFactory<FieldEvaluator, EffectivePressureEvaluator> EffectivePressureEvaluator::factory_("effective_pressure");
 Utils::RegisteredFactory<FieldEvaluator, IsobaricEOSEvaluator> IsobaricEOSEvaluator::factory_("isobaric eos");
 Utils::RegisteredFactory<FieldEvaluator, MolarFractionGasEvaluator> MolarFractionGasEvaluator::factory_("molar fraction gas");
 Utils::RegisteredFactory<FieldEvaluator, ViscosityEvaluator> ViscosityEvaluator::factory_("viscosity");
@@ -40,9 +39,10 @@ Utils::RegisteredFactory<FieldEvaluator, ViscosityEvaluator> ViscosityEvaluator:
 Utils::RegisteredFactory<EOS, EOS_Constant> EOS_Constant::factory_("constant");
 Utils::RegisteredFactory<EOS, EOS_IdealGas> EOS_IdealGas::factory_("ideal gas");
 Utils::RegisteredFactory<EOS, EOS_VaporInGas> EOS_VaporInGas::factory_("vapor in gas");
-Utils::RegisteredFactory<EOS, EOS_Water> EOS_Water::factory_("liquid water");
+Utils::RegisteredFactory<EOS, EOS_Water> EOS_Water::factory_("liquid water 0-30C");
+Utils::RegisteredFactory<EOS, EOS_WaterFEHM> EOS_WaterFEHM::factory_("liquid water FEHM");
 
-Utils::RegisteredFactory<VaporPressure_Base, VaporPressure_Water> VaporPressure_Water::factory_("water vapor over water/ice");
+Utils::RegisteredFactory<SaturatedVaporPressure, SaturatedVaporPressure_Water> SaturatedVaporPressure_Water::factory_("water vapor over water/ice");
 
 Utils::RegisteredFactory<Viscosity_Base, Viscosity_Constant> Viscosity_Constant::factory_("constant");
 Utils::RegisteredFactory<Viscosity_Base, Viscosity_Water> Viscosity_Water::factory_("liquid water");

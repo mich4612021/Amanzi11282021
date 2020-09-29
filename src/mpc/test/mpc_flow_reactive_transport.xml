@@ -209,23 +209,6 @@
       </ParameterList>
       <Parameter name="activity model" type="string" value="unit"/>
       <Parameter name="maximum Newton iterations" type="int" value="50"/>
-      <ParameterList name="initial conditions">
-	<ParameterList name="mineral_volume_fractions">
-          <Parameter name="function" type="string" value="list was moved to state"/>
-	</ParameterList>
-	<ParameterList name="mineral_specific_surface_area">
-          <Parameter name="function" type="string" value="list was moved to state"/>
-	</ParameterList>
-	<ParameterList name="ion_exchange_sites">
-          <Parameter name="function" type="string" value="list was moved to state"/>
-	</ParameterList>
-	<ParameterList name="ion_exchange_ref_cation_conc">
-          <Parameter name="function" type="string" value="list was moved to state"/>
-	</ParameterList>
-	<ParameterList name="free_ion_species">
-          <Parameter name="function" type="string" value="list was moved to state"/>
-	</ParameterList>
-      </ParameterList>
       <Parameter name="minerals" type="Array(string)" value="{Halite}"/>
       <Parameter name="number of component concentrations" type="int" value="4"/>
       <ParameterList name="verbose object">
@@ -370,7 +353,7 @@
       <ParameterList name="gravity">
         <Parameter name="value" type="Array(double)" value="{0.00000e+00, 0.00000e+00, -9.80664999999999942e+00}"/>
       </ParameterList>
-      <ParameterList name="fluid_density">
+      <ParameterList name="const_fluid_density">
         <Parameter name="value" type="double" value="9.982e+02"/>
       </ParameterList>
       <ParameterList name="atmospheric_pressure">
@@ -733,7 +716,7 @@
 
   <ParameterList name="preconditioners">
     <ParameterList name="Hypre AMG">
-      <Parameter name="preconditioner type" type="string" value="boomer amg"/>
+      <Parameter name="preconditioning method" type="string" value="boomer amg"/>
       <Parameter name="discretization method" type="string" value="mfd: optimized for sparsity"/>
       <ParameterList name="boomer amg parameters">
         <Parameter name="tolerance" type="double" value="0.00000e+00"/>
@@ -748,7 +731,7 @@
       </ParameterList>
     </ParameterList>
     <ParameterList name="Block ILU">
-      <Parameter name="preconditioner type" type="string" value="block ilu"/>
+      <Parameter name="preconditioning method" type="string" value="block ilu"/>
       <Parameter name="discretization method" type="string" value="mfd: optimized for sparsity"/>
       <ParameterList name="block ilu parameters">
         <Parameter name="fact: relax value" type="double" value="1.0"/>

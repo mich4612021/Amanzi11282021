@@ -29,19 +29,19 @@ void Flow_PK::VV_ValidateBCs() const
   std::set<int> pressure_faces, head_faces, flux_faces;
 
   for (int i =0; i < bcs_.size(); i++) {
-    if (bcs_[i]->bc_name() == "pressure") {
+    if (bcs_[i]->get_bc_name() == "pressure") {
       for (auto it = bcs_[i]->begin(); it != bcs_[i]->end(); ++it) {
         pressure_faces.insert(it->first);
       }  
     }
 
-    if (bcs_[i]->bc_name() == "flux") {
+    if (bcs_[i]->get_bc_name() == "flux") {
       for (auto it = bcs_[i]->begin(); it != bcs_[i]->end(); ++it) {
         flux_faces.insert(it->first);
       }
     }
 
-    if (bcs_[i]->bc_name() == "head") {
+    if (bcs_[i]->get_bc_name() == "head") {
       for (auto it = bcs_[i]->begin(); it != bcs_[i]->end(); ++it) {
         head_faces.insert(it->first);
       }
@@ -150,13 +150,13 @@ void Flow_PK::VV_ReportSeepageOutflow(const Teuchos::Ptr<State>& S, double dT) c
   double tmp, outflow(0.0);
 
   for (int i = 0; i < bcs_.size(); ++i) {
-    if (bcs_[i]->bc_name() == "seepage") {
+    if (bcs_[i]->get_bc_name() == "seepage") {
       nbcs++;
       for (auto it = bcs_[i]->begin(); it != bcs_[i]->end(); ++it) {
         f = it->first;
         if (f < nfaces_owned) {
           c = BoundaryFaceGetCell(f);
-          const AmanziGeometry::Point& normal = mesh_->face_normal(f, false, c, &dir);
+          mesh_->face_normal(f, false, c, &dir);
           tmp = flux[0][f] * dir;
           if (tmp > 0.0) outflow += tmp;
         }
@@ -186,24 +186,34 @@ void Flow_PK::VV_PrintHeadExtrema(const CompositeVector& pressure) const
   std::vector<int>& bc_model = op_bc_->bc_model();
   std::vector<double>& bc_value = op_bc_->bc_value();
 
+  int flag(0);
   double hmin(1.4e+9), hmax(-1.4e+9);  // diameter of the Sun
   double rho_g = rho_ * fabs(gravity_[dim - 1]);
+
   for (int f = 0; f < nfaces_owned; f++) {
     if (bc_model[f] == Operators::OPERATOR_BC_DIRICHLET) {
       double z = mesh_->face_centroid(f)[dim - 1]; 
       double h = z + (bc_value[f] - atm_pressure_) / rho_g;
       hmax = std::max(hmax, h);
       hmin = std::min(hmin, h);
+      flag = 1;
     }
   }
-  double tmp = hmin;  // global extrema
-  mesh_->get_comm()->MinAll(&tmp, &hmin, 1);
-  tmp = hmax;
-  mesh_->get_comm()->MaxAll(&tmp, &hmax, 1);
-
+  int flag_tmp(flag);
+  mesh_->get_comm()->MinAll(&flag_tmp, &flag, 1);
+  
+  double tmp;
   Teuchos::OSTab tab = vo_->getOSTab();
-  *vo_->os() << "boundary head (BCs): min=" << units_.OutputLength(hmin) 
-             << ", max=" << units_.OutputLength(hmax) << std::endl;
+
+  if (flag == 1) {
+    tmp = hmin;  // global extrema
+    mesh_->get_comm()->MinAll(&tmp, &hmin, 1);
+    tmp = hmax;
+    mesh_->get_comm()->MaxAll(&tmp, &hmax, 1);
+
+    *vo_->os() << "boundary head (BCs): min=" << units_.OutputLength(hmin) 
+               << ", max=" << units_.OutputLength(hmax) << std::endl;
+  }
 
   // process cell-based quantaties
   const Epetra_MultiVector& pcells = *pressure.ViewComponent("cell");
@@ -248,8 +258,10 @@ void Flow_PK::VV_PrintHeadExtrema(const CompositeVector& pressure) const
 ****************************************************************** */
 void Flow_PK::VV_PrintSourceExtrema() const
 {
-  if (vo_->getVerbLevel() >= Teuchos::VERB_HIGH) {
-    double smin(1.0e+99), smax(0.0);
+  int nsrc = srcs.size();
+
+  if (vo_->getVerbLevel() >= Teuchos::VERB_HIGH && nsrc > 0) {
+    double smin(1.0e+99), smax(-1.0e+99);
     std::vector<double> volumes;
 
     for (int i = 0; i < srcs.size(); ++i) {
@@ -265,14 +277,12 @@ void Flow_PK::VV_PrintSourceExtrema() const
     tmp = smax;
     mesh_->get_comm()->MaxAll(&tmp, &smax, 1);
 
-    if (MyPID == 0) {
-      Teuchos::OSTab tab = vo_->getOSTab();
-      *vo_->os() << "sources: min=" << smin << " max=" << smax << "  volumes: ";
-      for (int i = 0; i < std::min(5, (int)srcs.size()); ++i) {
-        *vo_->os() << volumes[i] << " ";
-      }
-      *vo_->os() << std::endl;
+    Teuchos::OSTab tab = vo_->getOSTab();
+    *vo_->os() << "sources: min=" << smin << " max=" << smax << "  volumes: ";
+    for (int i = 0; i < std::min(5, (int)srcs.size()); ++i) {
+      *vo_->os() << volumes[i] << " ";
     }
+    *vo_->os() << std::endl;
   }
 }
 

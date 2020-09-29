@@ -202,7 +202,7 @@
   <!-- PRECONDITIONERS -->
   <ParameterList name="preconditioners">
     <ParameterList name="Hypre AMG">
-      <Parameter name="preconditioner type" type="string" value="boomer amg"/>
+      <Parameter name="preconditioning method" type="string" value="boomer amg"/>
       <ParameterList name="boomer amg parameters">
         <Parameter name="cycle applications" type="int" value="2"/>
         <Parameter name="smoother sweeps" type="int" value="3"/>
@@ -212,7 +212,7 @@
     </ParameterList>
 
     <ParameterList name="Trilinos ML">
-      <Parameter name="preconditioner type" type="string" value="ml"/>
+      <Parameter name="preconditioning method" type="string" value="ml"/>
       <ParameterList name="ml parameters">
         <Parameter name="ML output" type="int" value="0"/>
         <Parameter name="aggregation: damping factor" type="double" value="1.33"/>
@@ -258,11 +258,11 @@
     </ParameterList>
 
     <ParameterList name="initial conditions">
-      <ParameterList name="fluid_density">
+      <ParameterList name="const_fluid_density">
         <Parameter name="value" type="double" value="1.0"/>
       </ParameterList>
 
-      <ParameterList name="fluid_viscosity">
+      <ParameterList name="const_fluid_viscosity">
         <Parameter name="value" type="double" value="1.0"/>
       </ParameterList>
 

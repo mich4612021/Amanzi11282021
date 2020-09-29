@@ -82,11 +82,6 @@ void PDE_AdvectionRiemann::InitAdvection_(Teuchos::ParameterList& plist)
     }
 
     global_op_ = Teuchos::rcp(new Operator_Schema(cvs_row, cvs_col, plist, global_schema_row_, global_schema_col_));
-    if (local_schema_col_.base() == AmanziMesh::CELL) {
-      local_op_ = Teuchos::rcp(new Op_Cell_Schema(global_schema_row_, global_schema_col_, mesh_));
-    } else if (local_schema_col_.base() == AmanziMesh::FACE) {
-      local_op_ = Teuchos::rcp(new Op_Face_Schema(global_schema_row_, global_schema_col_, mesh_));
-    }
 
   // constructor was given an Operator
   } else {
@@ -96,15 +91,15 @@ void PDE_AdvectionRiemann::InitAdvection_(Teuchos::ParameterList& plist)
     mesh_ = global_op_->DomainMap().Mesh();
     local_schema_row_.Init(mfd, mesh_, base);
     local_schema_col_.Init(mfd, mesh_, base);
-
-    if (local_schema_col_.base() == AmanziMesh::CELL) {
-      local_op_ = Teuchos::rcp(new Op_Cell_Schema(global_schema_row_, global_schema_col_, mesh_));
-    } else if (local_schema_col_.base() == AmanziMesh::FACE) {
-      local_op_ = Teuchos::rcp(new Op_Face_Schema(global_schema_row_, global_schema_col_, mesh_));
-    }
   }
 
   // register the advection Op
+  if (local_schema_col_.get_base() == AmanziMesh::CELL) {
+    local_op_ = Teuchos::rcp(new Op_Cell_Schema(global_schema_row_, global_schema_col_, mesh_));
+  } else if (local_schema_col_.get_base() == AmanziMesh::FACE) {
+    local_op_ = Teuchos::rcp(new Op_Face_Schema(global_schema_row_, global_schema_col_, mesh_));
+  }
+
   global_op_->OpPushBack(local_op_);
 }
 
@@ -245,7 +240,7 @@ void PDE_AdvectionRiemann::ApplyBCs(bool primary, bool eliminate, bool essential
         coef(i) = bc_value[f][i];
       }
 
-      WhetStone::Polynomial pf(d, dg_->order(), coef);
+      WhetStone::Polynomial pf(d, dg_->get_order(), coef);
       pf.set_origin(xf);
 
       // -- convert boundary polynomial to regularized space polynomial

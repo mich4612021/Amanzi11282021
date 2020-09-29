@@ -72,7 +72,6 @@ void EnergyOnePhase_PK::FunctionalResidual(
   tmp.Multiply(1.0, tmp, n_l, 0.0);
 
   CompositeVector g_adv(g->Data()->Map());
-  // op_advection_->Apply(tmp, g_adv);
   op_advection_->ComputeNegativeResidual(tmp, g_adv);
   g->Data()->Update(1.0, g_adv, 1.0);
 }
@@ -114,7 +113,7 @@ void EnergyOnePhase_PK::UpdatePreconditioner(
 
     der_name = Keys::getDerivKey(enthalpy_key_, temperature_key_);
     S_->GetFieldEvaluator(enthalpy_key_)->HasFieldDerivativeChanged(S_.ptr(), passwd_, temperature_key_);
-    auto dHdT = S_->GetFieldData(der_name, enthalpy_key_);
+    auto dHdT = Teuchos::rcp(new CompositeVector(*S_->GetFieldData(der_name, enthalpy_key_)));
 
     const CompositeVector& n_l = *S_->GetFieldData(mol_density_liquid_key_);
     dHdT->Multiply(1.0, *dHdT, n_l, 0.0);
@@ -125,8 +124,7 @@ void EnergyOnePhase_PK::UpdatePreconditioner(
   }
 
   // finalize preconditioner
-  op_preconditioner_->AssembleMatrix();
-  op_preconditioner_->UpdatePreconditioner();
+  op_preconditioner_->ComputeInverse();
 }
 
 
@@ -142,14 +140,12 @@ double EnergyOnePhase_PK::ErrorNorm(Teuchos::RCP<const TreeVector> u,
   const Epetra_MultiVector& uc = *u->Data()->ViewComponent("cell", false);
   const Epetra_MultiVector& duc = *du->Data()->ViewComponent("cell", false);
 
-  int cell_bad;
   double error_t(0.0);
   double ref_temp(273.0);
   for (int c = 0; c < ncells_owned; c++) {
     double tmp = fabs(duc[0][c]) / (fabs(uc[0][c] - ref_temp) + ref_temp);
     if (tmp > error_t) {
       error_t = tmp;
-      cell_bad = c;
     } 
   }
 

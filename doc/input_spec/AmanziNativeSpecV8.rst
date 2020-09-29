@@ -458,6 +458,10 @@ The evaluator has the following control parameters.
     * `"function`" [list] defines an analytic function for calculation. Its structure
       is described in the Functions_ section below.
 
+    * `"initialize faces from cells`" [bool] instructs state to initialize face-component
+      and boundary face-component (if any) of a composite vector from a cell-component 
+      using simple averaging. Default is false.
+
 .. code-block:: xml
 
   <ParameterList name="field_evaluators">  <!-- parent list -->
@@ -1131,11 +1135,12 @@ and :math:`\boldsymbol{K}_g` is the effective diffusion coefficient of the water
 We define 
 
 .. math::
-  \theta = \phi \eta_l s_l + \phi (1 - \eta_l) X_l
+  \theta = \phi \eta_l s_l + \phi \eta_g (1 - s_l) X_g
 
 where :math:`s_l` is liquid saturation [-],
 :math:`\phi` is porosity [-],
-and :math:`X_l` is molar fraction of water vapor [-].
+:math:`\eta_g` is molar density of water vapor [:math:`mol/m^3`],
+and :math:`X_g` is molar fraction of water vapor.
 The effective diffusion coefficient of the water vapor is given by
 
 .. math::
@@ -2266,9 +2271,10 @@ The diffusivity is defined independently for each solute.
   * `"model`" [string] Defines dispersivity model, choose exactly one of the following: `"scalar`", `"Bear`",
     `"Burnett-Frind`", or `"Lichtner-Kelkar-Robinson`".
   * `"parameters for MODEL`" [list] where `"MODEL`" is the model name.
-    For model `"scalar`", the following options must be specified:
+    For model `"scalar`", *only* one of the following options must be specified:
 
-      * `"alpha`" [double] defines dispersion in all directions, [m]. 
+      * `"alpha`" [double] defines dispersivity in all directions, [m].
+      * `"dispersion coefficient`" [double] defines dispersion coefficient [m^2/s].
 
     For model `"Bear`", the following options must be specified:
 
@@ -2278,24 +2284,24 @@ The diffusivity is defined independently for each solute.
     For model `"Burnett-Frind`", the following options must be specified:
 
       * `"alphaL`" [double] defines the longitudinal dispersion in the direction of Darcy velocity, [m].
-      * `"alpha_th`" [double] Defines the transverse dispersion in the horizonla direction orthogonal directions.
-      * `"alpha_tv`" [double] Defines dispersion in the orthogonal directions.
+      * `"alpha_th`" [double] Defines the transverse dispersion in the horizonla direction orthogonal directions, [m].
+      * `"alpha_tv`" [double] Defines dispersion in the orthogonal directions, [m].
         When `"alpha_th`" equals to `"alpha_tv`", we obtain dispersion in the direction of the Darcy velocity.
         This and the above parameters must be defined for `"Burnett-Frind`" and `"Lichtner-Kelkar-Robinson`" models.
 
     For model `"Lichtner-Kelker-Robinson`", the following options must be specified:
 
       * `"alpha_lh`" [double] defines the longitudinal dispersion in the horizontal direction, [m].
-      * `"alpha_lv`" [double] Defines the longitudinal dispersion in the vertical direction.
+      * `"alpha_lv`" [double] Defines the longitudinal dispersion in the vertical direction, [m].
         When `"alpha_lh`" equals to `"alpha_lv`", we obtain dispersion in the direction of the Darcy velocity.
         This and the above parameters must be defined for `"Burnett-Frind`" and `"Lichtner-Kelker-Robinson`" models.
-      * `"alpha_th`" [double] Defines the transverse dispersion in the horizontal direction orthogonal directions.
+      * `"alpha_th`" [double] Defines the transverse dispersion in the horizontal direction orthogonal directions, [m].
       * `"alpha_tv" [double] Defines dispersion in the orthogonal directions.
         When `"alpha_th`" equals to `"alpha_tv`", we obtain dispersion in the direction of the Darcy velocity.
         This and the above parameters must be defined for `"Burnett-Frind`" and `"Lichtner-Kelker-Robinson`" models.
 
-  * `"aqueous tortuosity`" [double] Defines tortuosity for calculating diffusivity of liquid solutes.
-  * `"gaseous tortuosity`" [double] Defines tortuosity for calculating diffusivity of gas solutes.
+  * `"aqueous tortuosity`" [double] Defines tortuosity for calculating diffusivity of liquid solutes, [-].
+  * `"gaseous tortuosity`" [double] Defines tortuosity for calculating diffusivity of gas solutes, [-].
  
 Three examples are below:
 
@@ -2310,7 +2316,7 @@ Three examples are below:
         <Parameter name="alpha_l" type="double" value="1e-2"/>
         <Parameter name="alpha_t" type="double" value="1e-5"/>
       <ParameterList>
-      <Parameter name="aqueous tortuosity" type="double" value="1.0"/>       
+      <Parameter name="aqueous tortuosity" type="double" value="1.0"/>
       <Parameter name="gaseous tortuosity" type="double" value="1.0"/>       
     </ParameterList>  
      
@@ -3590,6 +3596,61 @@ This section to be written.
   </ParameterList>
 
 
+Multiphase PK
+-------------
+
+Mathematical models
+...................
+
+The conceptual PDE model for the isothermal multiphase flow inlcude
+transport equations for components and nonlinear algebraic constraints for the phase presence. 
+At the moment we consider two phases (liquid and gas), multiple components, and one 
+constraint.
+Each transport equation has the following form:
+
+.. math::
+  \frac{\partial \Theta}{\partial t}
+  + \nabla \cdot \boldsymbol{\Psi} = Q,
+
+where 
+:math:`\Theta` is the storage and 
+:math:`\boldsymbol{\Psi}` is the flux.
+The storage term sums up component amount across two phases, :math:`\alpha=l` for liquid
+phase and :math:`\alpha=g` for gas phase:
+
+.. math::
+  \Theta = \phi \sum_\alpha \eta_\alpha x_\alpha s_\alpha
+
+where
+:math:`\phi` is porosity [-],
+:math:`\eta` is molar density [mol/m^3],
+:math:`x` is molar fraction of component [-], and
+:math:`s` is phase saturation [-].
+
+The flux includes advective and diffusion terms:
+
+.. math::
+  \boldsymbol{\Psi} 
+  = -\sum_\alpha \eta_\alpha \left(\boldsymbol{q}_\alpha + D_\alpha \nabla x \right)
+
+where
+:math:`\boldsymbol{q}` is Darcy phase velocity,
+:math:`D` is molecular duffusion coefficient.
+
+The nonlinear algebraic constraint may have different forms. One of the available forms is
+
+.. math::
+  min (s_g, 1 - x_l - x_g) = 0.
+
+It implies that if gas compounent is present then we must have :math:`x_l + x_g = 1`.
+
+The PK provides three choices of primary variables. 
+The first one includes pressure liquid, mole gas fraction, and saturation liquid.
+The second one includes pressure liquid, molar gas density, and saturation liquid.
+The third one is used for verification purposes and is based on the model in Jaffre's paper. 
+This model describes two-phase two-component system with water and hydrogen. 
+
+
 Shallow water PK
 ----------------
 
@@ -3834,18 +3895,20 @@ The conceptual PDE model of the stationary coupled matrix-fracture flow is
 
 .. math::
   \begin{array}{l}
+  \phi_m \frac{S_{s,m}}{g} \frac{\partial p_m}{\partial t}
   - \boldsymbol{\nabla} \cdot (\rho_l \boldsymbol{q}_m) = Q_m,
   \quad
   \boldsymbol{q}_m = -\frac{\boldsymbol{K}_m}{\mu} 
   (\boldsymbol{\nabla} p_m - \rho_l \boldsymbol{g}) \\
   %
+  \phi_f \frac{S_{s,f}}{g} \frac{\partial p_f}{\partial t}
   -\boldsymbol{\nabla} \cdot (\rho_l \boldsymbol{q}_f) = 
     -\rho_l [[ \tilde{\boldsymbol{q}}_m \cdot \boldsymbol{n} ]],
   \quad
   \boldsymbol{q}_f = -\frac{\boldsymbol{K}_f}{\mu} 
   (\boldsymbol{\nabla} p_f - \rho_l \boldsymbol{g}) \\
   %
-  \tilde{\boldsymbol{q}}_m \cdot \boldsymbol{n} = k (p_f - p_m)
+  \tilde{\boldsymbol{q}}_m \cdot \boldsymbol{n} = \frac{k}{g} (p_f - p_m)
   \end{array}
 
 subject to convential boundary conditions for both matrix and fracture domains expect for 
@@ -3856,11 +3919,13 @@ the matrix-fracture boundary where the boundary condition is
 
 Here
 :math:`\rho_l` is fluid density [kg/m^3],
+:math:`\phi` is porosity [-],
+:math:`S_s` is ispecific storage [m],
 :math:`p` is aqueous pressure [Pa],
 :math:`\boldsymbol{K}` is absolute permeability [m^2] for matrix domain and [m^3] for fracture domain,
 :math:`Q_m` is source or sink term,
 :math:`\boldsymbol{q}` is the Darcy velocity [m/s] for matrix domain and [m^2/s] for fracture domain,
-:math:`k` is effective normal premeability [m/s/Pa],
+:math:`k` is effective normal premeability [s^-1],
 and
 :math:`\boldsymbol{g}` is gravity [:math:`m/s^2`].
 
@@ -4978,10 +5043,10 @@ by various PKs.
 
 .. _LinearSolvers:
 
-Linear solvers
---------------
+Iterative solvers
+-----------------
 
-This list contains sublists for various linear solvers such as PCG, GMRES, and NKA.
+This list contains sublists for various linear algebra solvers such as PCG, GMRES, and NKA.
 Note that only PK can provide a preconditioner for a linear solver; hence, we cannot
 specify it here.
 
@@ -5163,8 +5228,8 @@ These parameters may violate the camel-case convention employed by this spec.
 Additional parameters are:
 
 * `"solver name`" [string] declares name of one of the supported direct solvers. 
-  Available options are `"Klu`", `"Superlu`", `"Basker`", etc, see Amesos and 
-  Amesos2 manuals for details. The default value is serial solver `"Klu`".
+  Available options are `"klu`", `"superludist`", `"basker`", etc, see Amesos and 
+  Amesos2 manuals for details. The default value is serial solver `"klu`".
 
 * `"amesos version`" [int] specifies version of Amesos. Available options are 1 and 2.
   The default value is 1.
@@ -5174,7 +5239,7 @@ Additional parameters are:
   <ParameterList name="_AMESOS KLU">  <!-- parent list -->
   <Parameter name="direct method" type="string" value="amesos"/>
   <ParameterList name="amesos parameters">
-    <Parameter name="solver name" type="string" value="Klu"/>
+    <Parameter name="solver name" type="string" value="klu"/>
     <Parameter name="amesos version" type="int" value="1"/>
   </ParameterList>
   </ParameterList>
@@ -5511,31 +5576,31 @@ preconditioners required by a simulation. At the moment, we support Trilinos mul
 preconditioner, Hypre BoomerAMG preconditioner, ILU preconditioner, Euclid ILU
 preconditioner, and identity preconditioner. 
 
-* `"type`" [string] defines preconditioner name.
+* `"preconditioning method`" [string] defines preconditioner algorithm.
 
 * `"xxx parameters`" [list] provides parameters for the preconditioner specified 
-  by variable `"type`".
+  by parameter `"preconditioning method`".
  
 .. code-block:: xml
 
   <ParameterList>  <!-- parent list -->
   <ParameterList name="preconditioners">
     <ParameterList name="_TRILINOS ML">
-      <Parameter name="type" type="string" value="ml"/>
+      <Parameter name="preconditioning method" type="string" value="ml"/>
       <ParameterList name="ml parameters">
         ... 
       </ParameterList>
     </ParameterList>
 
     <ParameterList name="_HYPRE AMG">
-      <Parameter name="type" type="string" value="boomer amg"/>
+      <Parameter name="preconditioning method" type="string" value="boomer amg"/>
       <ParameterList name="boomer amg parameters">
         ...
       </ParameterList>
     </ParameterList>
 
     <ParameterList name="_BLOCK ILU">
-      <Parameter name="type" type="string" value="block ilu"/>
+      <Parameter name="preconditioning method" type="string" value="block ilu"/>
       <ParameterList name="block ilu parameters">
         ...
       </ParameterList>

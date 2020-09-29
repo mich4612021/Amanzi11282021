@@ -16,12 +16,9 @@
 
 // Amanzi
 #include "errors.hh"
-#include "LinearOperator.hh"
-#include "LinearOperatorFactory.hh"
 #include "MatrixFE.hh"
 #include "MFD3D_CrouzeixRaviart.hh"
 #include "MFD3D_Diffusion.hh"
-#include "PreconditionerFactory.hh"
 #include "SuperMap.hh"
 #include "WhetStoneDefs.hh"
 
@@ -36,6 +33,7 @@
 #include "Operator_FaceCell.hh"
 #include "Operator_FaceCellScc.hh"
 #include "Operator_FaceCellSff.hh"
+#include "Operator_Factory.hh"
 #include "Operator_Node.hh"
 #include "Operator_ConsistentFace.hh"
 #include "UniqueLocalIndex.hh"
@@ -56,6 +54,9 @@ void PDE_DiffusionMFD::SetTensorCoefficient(
   if (local_op_schema_ == OPERATOR_SCHEMA_BASE_CELL + OPERATOR_SCHEMA_DOFS_FACE + OPERATOR_SCHEMA_DOFS_CELL) {
     if (K_ != Teuchos::null && K_.get()) AMANZI_ASSERT(K_->size() == ncells_owned);
   }
+
+  // changing the tensor coefficient invalidates the mass matrices
+  mass_matrices_initialized_ = false;  
 }
 
 
@@ -352,7 +353,7 @@ void PDE_DiffusionMFD::UpdateMatricesNodal_()
     WhetStone::DenseMatrix Acell(nnodes, nnodes);
 
     int method = mfd_primary_;
-    int ok = WhetStone::WHETSTONE_ELEMENTAL_MATRIX_FAILED;
+    int ok = 1;
 
     if (method == WhetStone::DIFFUSION_OPTIMIZED_FOR_MONOTONICITY) {
       ok = mfd.StiffnessMatrixMMatrix(c, K, Acell);
@@ -362,12 +363,12 @@ void PDE_DiffusionMFD::UpdateMatricesNodal_()
       method = mfd_secondary_;
     }
 
-    if (ok != WhetStone::WHETSTONE_ELEMENTAL_MATRIX_OK) {
+    if (ok != 0) {
       nfailed_primary_++;
       ok = mfd.StiffnessMatrix(c, K, Acell);
     }
 
-    if (ok == WhetStone::WHETSTONE_ELEMENTAL_MATRIX_FAILED) {
+    if (ok == 1) {
       Errors::Message msg("Stiffness_MFD: unexpected failure of LAPACK in WhetStone.");
       Exceptions::amanzi_throw(msg);
     }
@@ -1099,12 +1100,12 @@ void PDE_DiffusionMFD::CreateMassMatrices_()
       int nfaces = mesh_->cell_get_num_faces(c);
       Wff.Reshape(nfaces, nfaces);
       Wff.PutScalar(0.0);
-      ok = WhetStone::WHETSTONE_ELEMENTAL_MATRIX_OK;
+      ok = 0;
     } else if (surface_mesh) {
       ok = mfd.MassMatrixInverseSurface(c, Kc, Wff);
     } else {
       int method = mfd_primary_;
-      ok = WhetStone::WHETSTONE_ELEMENTAL_MATRIX_FAILED;
+      ok = 1;
 
       // try primary and then secondary discretization methods.
       if (method == WhetStone::DIFFUSION_HEXAHEDRA_MONOTONE) {
@@ -1115,7 +1116,7 @@ void PDE_DiffusionMFD::CreateMassMatrices_()
         method = mfd_secondary_;
       }
 
-      if (ok != WhetStone::WHETSTONE_ELEMENTAL_MATRIX_OK) {
+      if (ok != 0) {
         if (method == WhetStone::DIFFUSION_OPTIMIZED_FOR_SPARSITY) {
           ok = mfd.MassMatrixInverseOptimized(c, Kc, Wff);
         } else if (method == WhetStone::DIFFUSION_TPFA) {
@@ -1134,7 +1135,7 @@ void PDE_DiffusionMFD::CreateMassMatrices_()
 
     Wff_cells_[c] = Wff;
 
-    if (ok == WhetStone::WHETSTONE_ELEMENTAL_MATRIX_FAILED) {
+    if (ok == 1) {
       Errors::Message msg("PDE_DiffusionMFD: unexpected failure in WhetStone.");
       Exceptions::amanzi_throw(msg);
     }
@@ -1257,46 +1258,20 @@ void PDE_DiffusionMFD::ParsePList_(Teuchos::ParameterList& plist)
 ****************************************************************** */
 void PDE_DiffusionMFD::Init(Teuchos::ParameterList& plist)
 {
-  // create or check the existing Operator
   int global_op_schema = schema_prec_dofs_;  
-  if (global_op_ == Teuchos::null) {
+  if (global_op_ == Teuchos::null) {  // create operator
     global_op_schema_ = global_op_schema;
 
-    // build the CVS from the global schema
-    auto cvs = Teuchos::rcp(new CompositeVectorSpace());
-    cvs->SetMesh(mesh_)->SetGhosted(true);
+    Schema schema(global_op_schema_);
 
-    if (global_op_schema & OPERATOR_SCHEMA_DOFS_CELL)
-      cvs->AddComponent("cell", AmanziMesh::CELL, 1);
-    if (global_op_schema & OPERATOR_SCHEMA_DOFS_FACE)
-      cvs->AddComponent("face", AmanziMesh::FACE, 1);
-    if (global_op_schema & OPERATOR_SCHEMA_DOFS_NODE)
-      cvs->AddComponent("node", AmanziMesh::NODE, 1);
+    Operator_Factory factory;
+    factory.set_mesh(mesh_);
+    factory.set_plist(Teuchos::rcpFromRef(plist));
+    factory.set_schema(schema);
 
-    // choose the Operator from the prec schema
-    if (schema_prec_dofs_ == OPERATOR_SCHEMA_DOFS_NODE) {
-      global_op_ = Teuchos::rcp(new Operator_Node(cvs, plist));
-    } 
-    else if (schema_prec_dofs_ == OPERATOR_SCHEMA_DOFS_CELL) {
-      // cvs->AddComponent("face", AmanziMesh::FACE, 1);
-      // global_op_ = Teuchos::rcp(new Operator_FaceCellScc(cvs, plist));
-      global_op_ = Teuchos::rcp(new Operator_Cell(cvs, plist, schema_prec_dofs_));
-    } 
-    else if (schema_prec_dofs_ == OPERATOR_SCHEMA_DOFS_FACE) {
-      cvs->AddComponent("cell", AmanziMesh::CELL, 1);
-      global_op_ = Teuchos::rcp(new Operator_FaceCellSff(cvs, plist));
-    } 
-    else if (schema_prec_dofs_ == (OPERATOR_SCHEMA_DOFS_CELL | OPERATOR_SCHEMA_DOFS_FACE)) {
-      global_op_ = Teuchos::rcp(new Operator_FaceCell(cvs, plist));
-    } 
-    else {
-      Errors::Message msg;
-      msg << "PDE_DiffusionMFD: \"preconditioner schema\" must be NODE, CELL, FACE, or FACE+CELL";
-      Exceptions::amanzi_throw(msg);
-    }
+    global_op_ = factory.CreateFromSchema();
 
-  } else {
-    // constructor was given an Operator
+  } else {  // constructor was given an Operator
     global_op_schema_ = global_op_->schema();
     mesh_ = global_op_->DomainMap().Mesh();
   }
@@ -1410,8 +1385,12 @@ int PDE_DiffusionMFD::UpdateConsistentFaces(CompositeVector& u)
 
     consistent_face_op_ = Teuchos::rcp(new Operator_ConsistentFace(cface_cvs, plist_.sublist("consistent faces")));
     consistent_face_op_->OpPushBack(local_op_);
-    consistent_face_op_->SymbolicAssembleMatrix();
-    consistent_face_op_->InitializePreconditioner(plist_.sublist("consistent faces").sublist("preconditioner"));
+    Teuchos::ParameterList lin_solver = plist_.sublist("consistent faces").sublist("preconditioner");
+    if (plist_.sublist("consistent faces").isSublist("linear solver")) {
+      lin_solver.setParameters(plist_.sublist("consistent faces").sublist("linear solver"));
+    }
+    consistent_face_op_->set_inverse_parameters(lin_solver);
+    consistent_face_op_->InitializeInverse();
   }
 
   // calculate the rhs, given by y_f - Afc * x_c
@@ -1437,24 +1416,11 @@ int PDE_DiffusionMFD::UpdateConsistentFaces(CompositeVector& u)
   y.GatherGhostedToMaster("face", Add);
 
   // x_f = Aff^-1 * ...
-  consistent_face_op_->AssembleMatrix();
-  consistent_face_op_->UpdatePreconditioner();
+  consistent_face_op_->ComputeInverse();
 
-  int ierr = 0;
-  if (plist_.sublist("consistent faces").isSublist("linear solver")) {
-    AmanziSolvers::LinearOperatorFactory<Operator, CompositeVector, CompositeVectorSpace> fac;
-    Teuchos::RCP<Operator> lin_solver = fac.Create(
-        plist_.sublist("consistent faces").sublist("linear solver"), consistent_face_op_);
-
-    CompositeVector u_f_copy(y);
-    ierr = lin_solver->ApplyInverse(y, u_f_copy);
-    *u.ViewComponent("face", false) = *u_f_copy.ViewComponent("face", false);
-  } else {
-    CompositeVector u_f_copy(y);
-    ierr = consistent_face_op_->ApplyInverse(y, u);
-    *u.ViewComponent("face", false) = *u_f_copy.ViewComponent("face", false);
-  }
-  
+  CompositeVector u_f_copy(y);
+  int ierr = consistent_face_op_->ApplyInverse(y, u_f_copy);
+  *u.ViewComponent("face", false) = *u_f_copy.ViewComponent("face", false);
   return (ierr > 0) ? 0 : 1;
 }
   

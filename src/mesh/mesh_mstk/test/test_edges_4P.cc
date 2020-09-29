@@ -12,16 +12,12 @@
 
 TEST(MSTK_EDGES_2D)
 {
-
   auto comm = Amanzi::getDefaultComm();
-  int rank = comm->MyPID();
   int size = comm->NumProc();
   CHECK_EQUAL(4,size);
   
-  //  if (rank == 0) {
   int DebugWait = 0;
   while (DebugWait);
-  //  }
 
   // Generate a 4x4 quad mesh distributed over four processors
   
@@ -36,6 +32,7 @@ TEST(MSTK_EDGES_2D)
 				    Amanzi::AmanziMesh::Parallel_type::OWNED);
   int ne_all = mesh->num_entities(Amanzi::AmanziMesh::EDGE,
 				  Amanzi::AmanziMesh::Parallel_type::ALL);
+  CHECK(ne_owned <= ne_all);
 
   // This assumes a symmetric partitioning - not always the case with
   // ZOLTAN graph partitioning

@@ -51,45 +51,46 @@ EnergyTwoPhase_PK::EnergyTwoPhase_PK(
 void EnergyTwoPhase_PK::Setup(const Teuchos::Ptr<State>& S)
 {
   // basic class setup
-  Energy_PK::Setup(S.ptr());
+  Energy_PK::Setup(S);
 
   // Get data and evaluators needed by the PK
   // -- energy, the conserved quantity
-  if (!S_->HasField(energy_key_)) {
-    S_->RequireField(energy_key_)->SetMesh(mesh_)->SetGhosted()
+  if (!S->HasField(energy_key_)) {
+    S->RequireField(energy_key_)->SetMesh(mesh_)->SetGhosted()
       ->AddComponent("cell", AmanziMesh::CELL, 1);
 
-    Teuchos::ParameterList ee_list = ep_list_->sublist("energy evaluator");
-    ee_list.set<std::string>("energy key", energy_key_)
-           .set<bool>("vapor diffusion", true)
-           .set<std::string>("particle density key", particle_density_key_)
-           .set<std::string>("internal energy rock key", ie_rock_key_);
-    Teuchos::RCP<TotalEnergyEvaluator> ee = Teuchos::rcp(new TotalEnergyEvaluator(ee_list));
-    S_->SetFieldEvaluator(energy_key_, ee);
+    Teuchos::ParameterList elist = ep_list_->sublist("energy evaluator");
+    elist.set<std::string>("energy key", energy_key_)
+         .set<bool>("vapor diffusion", true)
+         .set<std::string>("particle density key", particle_density_key_)
+         .set<std::string>("internal energy rock key", ie_rock_key_);
+    Teuchos::RCP<TotalEnergyEvaluator> ee = Teuchos::rcp(new TotalEnergyEvaluator(elist));
+    S->SetFieldEvaluator(energy_key_, ee);
   }
 
   // -- advection of enthalpy
-  if (!S_->HasField(enthalpy_key_)) {
-    S_->RequireField(enthalpy_key_)->SetMesh(mesh_)
-      ->SetGhosted()->AddComponent("cell", AmanziMesh::CELL, 1);
+  if (!S->HasField(enthalpy_key_)) {
+    S->RequireField(enthalpy_key_)->SetMesh(mesh_)
+      ->SetGhosted()->AddComponent("cell", AmanziMesh::CELL, 1)
+      ->SetGhosted()->AddComponent("boundary_face", AmanziMesh::BOUNDARY_FACE, 1);
 
     Teuchos::ParameterList elist = ep_list_->sublist("enthalpy evaluator");
     elist.set("enthalpy key", enthalpy_key_);
 
     auto enth = Teuchos::rcp(new EnthalpyEvaluator(elist));
-    S_->SetFieldEvaluator(enthalpy_key_, enth);
+    S->SetFieldEvaluator(enthalpy_key_, enth);
   }
 
   // -- thermal conductivity
-  if (!S_->HasField(conductivity_key_)) {
-    S_->RequireField(conductivity_key_)->SetMesh(mesh_)
+  if (!S->HasField(conductivity_key_)) {
+    S->RequireField(conductivity_key_)->SetMesh(mesh_)
       ->SetGhosted()->AddComponent("cell", AmanziMesh::CELL, 1);
 
     Teuchos::ParameterList elist = ep_list_->sublist("thermal conductivity evaluator");
     elist.set("thermal conductivity key", conductivity_key_);
 
     auto tcm = Teuchos::rcp(new TCMEvaluator_TwoPhase(elist));
-    S_->SetFieldEvaluator(conductivity_key_, tcm);
+    S->SetFieldEvaluator(conductivity_key_, tcm);
   }
 }
 
@@ -102,7 +103,6 @@ void EnergyTwoPhase_PK::Initialize(const Teuchos::Ptr<State>& S)
   // times, initialization could be done on any non-zero interval.
   double t_old = S->time(); 
   dt_ = ti_list_->get<double>("initial time step", 1.0);
-  double t_new = t_old + dt_;
 
   // Call the base class initialize.
   Energy_PK::Initialize(S);
@@ -160,14 +160,14 @@ void EnergyTwoPhase_PK::Initialize(const Teuchos::Ptr<State>& S)
   op_acc_ = Teuchos::rcp(new Operators::PDE_Accumulation(AmanziMesh::CELL, op_preconditioner_));
   op_preconditioner_advection_ = opfactory_adv.Create(oplist_adv, op_preconditioner_);
   op_preconditioner_advection_->SetBCs(op_bc_enth_, op_bc_enth_);
-  op_preconditioner_->SymbolicAssembleMatrix();
 
   // initialize preconditioner
   AMANZI_ASSERT(ti_list_->isParameter("preconditioner"));
   std::string name = ti_list_->get<std::string>("preconditioner");
   Teuchos::ParameterList slist = preconditioner_list_->sublist(name);
-  op_preconditioner_->InitializePreconditioner(slist);
-
+  op_preconditioner_->set_inverse_parameters(slist);
+  op_preconditioner_->InitializeInverse();
+  
   // initialize time integrator
   std::string ti_method_name = ti_list_->get<std::string>("time integration method", "none");
   if (ti_method_name == "BDF1") {
@@ -179,12 +179,26 @@ void EnergyTwoPhase_PK::Initialize(const Teuchos::Ptr<State>& S)
     bdf1_dae_ = Teuchos::rcp(new BDF1_TI<TreeVector, TreeVectorSpace>(*this, bdf1_list, soln_));
   }
 
-  // output of initialization header
+  // initialize boundary conditions
+  double t_ini = S->time(); 
+  auto temperature = *S->GetFieldData(temperature_key_, passwd_);
+  UpdateSourceBoundaryData(t_ini, t_ini, temperature);
+
+  // output of initialization summary
   if (vo_->getVerbLevel() >= Teuchos::VERB_MEDIUM) {
     Teuchos::OSTab tab = vo_->getOSTab();
-    *vo_->os() << std::endl << vo_->color("green")
-               << "Initialization of TP is complete, T=" << t_old 
+    *vo_->os() << "temperature BC assigned to " << dirichlet_bc_faces_ << " faces\n\n"
+               << "solution vector: ";
+    solution->Print(*vo_->os(), false);
+    *vo_->os() << std::endl 
+               << vo_->color("green") << "Initialization of TP is complete, T=" << t_old 
                << " dT=" << dt_ << vo_->reset() << std::endl;
+  }
+
+  if (dirichlet_bc_faces_ == 0 &&
+      domain_ == "domain" && vo_->getVerbLevel() >= Teuchos::VERB_LOW) {
+    Teuchos::OSTab tab = vo_->getOSTab();
+    *vo_->os() << "WARNING: no essential boundary conditions, solver may fail" << std::endl;
   }
 }
 

@@ -32,7 +32,7 @@ VWContentEvaluator_ConstDensity::VWContentEvaluator_ConstDensity(Teuchos::Parame
 ****************************************************************** */
 void VWContentEvaluator_ConstDensity::Init_()
 {
-  my_key_ = std::string("water_content");
+  my_key_ = plist_.get<std::string>("water content key");
   pressure_key_ = plist_.get<std::string>("pressure key");
   saturation_key_ = plist_.get<std::string>("saturation key");
   porosity_key_ = plist_.get<std::string>("porosity key");
@@ -57,7 +57,7 @@ void VWContentEvaluator_ConstDensity::EvaluateField_(
   const Epetra_MultiVector& s_l = *S->GetFieldData(saturation_key_)->ViewComponent("cell");
   const Epetra_MultiVector& phi = *S->GetFieldData(porosity_key_)->ViewComponent("cell");
 
-  double rho = *S->GetScalarData("fluid_density");
+  double rho = *S->GetScalarData("const_fluid_density");
   double n_l = rho / CommonDefs::MOLAR_MASS_H2O;
 
   Epetra_MultiVector& result_v = *result->ViewComponent("cell");
@@ -99,7 +99,7 @@ void VWContentEvaluator_ConstDensity::EvaluateFieldPartialDerivative_(
   const Epetra_MultiVector& s_l = *S->GetFieldData(saturation_key_)->ViewComponent("cell");
   const Epetra_MultiVector& phi = *S->GetFieldData(porosity_key_)->ViewComponent("cell");
 
-  double rho = *S->GetScalarData("fluid_density");
+  double rho = *S->GetScalarData("const_fluid_density");
   double n_l = rho / CommonDefs::MOLAR_MASS_H2O;
 
   Epetra_MultiVector& result_v = *result->ViewComponent("cell");

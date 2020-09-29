@@ -57,12 +57,11 @@ void PDE_DiffusionFV::Init_(Teuchos::ParameterList& plist)
     if (plist.get<bool>("surface operator", false)) {
       std::string name = "Diffusion: FACE_CELL Surface";
       local_op_ = Teuchos::rcp(new Op_SurfaceFace_SurfaceCell(name, mesh_));
-      global_op_->OpPushBack(local_op_);
     } else {
       std::string name = "Diffusion: FACE_CELL";
       local_op_ = Teuchos::rcp(new Op_Face_Cell(name, mesh_));
-      global_op_->OpPushBack(local_op_);
     }
+    global_op_->OpPushBack(local_op_);
   }
   
   // upwind options
@@ -306,7 +305,6 @@ void PDE_DiffusionFV::ApplyBCs(bool primary, bool eliminate, bool essential_eqn)
         Aface *= 0.0;
       }
     }
-    
   }
 }
 
@@ -323,7 +321,7 @@ void PDE_DiffusionFV::UpdateFlux(const Teuchos::Ptr<const CompositeVector>& solu
   const std::vector<double>& bc_value = bcs_trial_[0]->bc_value();
 
   solution->ScatterMasterToGhosted("cell");
-  if (k_ != Teuchos::null)  k_->ScatterMasterToGhosted("face");
+  if (k_ != Teuchos::null) k_->ScatterMasterToGhosted("face");
   
   const Teuchos::Ptr<const Epetra_MultiVector> Krel_face =
       k_.get() ? k_->ViewComponent("face", false).ptr() : Teuchos::null;

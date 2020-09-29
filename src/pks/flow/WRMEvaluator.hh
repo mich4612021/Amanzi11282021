@@ -16,18 +16,18 @@
 #define AMANZI_FLOW_WRM_EVALUATOR_HH_
 
 #include "Factory.hh"
-#include "secondary_variables_field_evaluator.hh"
+#include "secondary_variable_field_evaluator.hh"
 #include "WRM.hh"
 #include "WRMPartition.hh"
 
 namespace Amanzi {
 namespace Flow {
 
-class WRMEvaluator : public SecondaryVariablesFieldEvaluator {
+class WRMEvaluator : public SecondaryVariableFieldEvaluator {
  public:
   // constructor format for all derived classes
   explicit
-  WRMEvaluator(Teuchos::ParameterList& plist, Teuchos::RCP<WRMPartition> wrm);
+  WRMEvaluator(Teuchos::ParameterList& plist, const Teuchos::RCP<WRMPartition>& wrm);
   WRMEvaluator(const WRMEvaluator& other);
 
   virtual Teuchos::RCP<FieldEvaluator> Clone() const;
@@ -37,9 +37,9 @@ class WRMEvaluator : public SecondaryVariablesFieldEvaluator {
 
   // Required methods from SecondaryVariableFieldEvaluator
   virtual void EvaluateField_(const Teuchos::Ptr<State>& S,
-          const std::vector<Teuchos::Ptr<CompositeVector> >& results);
+          const Teuchos::Ptr<CompositeVector>& result);
   virtual void EvaluateFieldPartialDerivative_(const Teuchos::Ptr<State>& S,
-          Key wrt_key, const std::vector<Teuchos::Ptr<CompositeVector> > & results);
+          Key wrt_key, const Teuchos::Ptr<CompositeVector> & result);
 
  protected:
   Teuchos::RCP<const AmanziMesh::Mesh> mesh_;

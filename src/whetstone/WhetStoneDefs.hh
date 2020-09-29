@@ -71,11 +71,6 @@ enum class Parallel_type {
 };
 #endif
 
-// status of elemental matrices
-const int WHETSTONE_ELEMENTAL_MATRIX_OK = 0;
-const int WHETSTONE_ELEMENTAL_MATRIX_SIZE = 1;
-const int WHETSTONE_ELEMENTAL_MATRIX_FAILED = 2;  // only for unexpected situations
-
 // control of the stabilization term in MFD schemes
 const int WHETSTONE_STABILITY_GENERIC = 1;
 const int WHETSTONE_STABILITY_GENERIC_SCALED = 2;
@@ -103,9 +98,6 @@ const int DIFFUSION_OPTIMIZED_FOR_MONOTONICITY = 3;
 const int DIFFUSION_HEXAHEDRA_MONOTONE = 4;
 const int DIFFUSION_SUPPORT_OPERATOR = 7;
 const int DIFFUSION_TPFA = 5; 
-
-const int ELECTROMAGNETICS_DEFAULT = 1;
-const int ELECTROMAGNETICS_GENERALIZED = 2;
 
 // various DG schemes
 const int TAYLOR_BASIS_NATURAL = 1;

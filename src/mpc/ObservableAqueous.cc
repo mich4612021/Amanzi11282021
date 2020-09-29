@@ -111,7 +111,7 @@ void ObservableAqueous::ComputeObservation(
   //double volume, value;
   Errors::Message msg;
   int dim = mesh_->space_dimension();
-  double rho = *S.GetScalarData("fluid_density");
+  double rho = *S.GetScalarData("const_fluid_density");
   Key head_key = Keys::getKey(domain_, "hydraulic_head");
   Key poro_key = Keys::getKey(domain_, "porosity");
   Key sat_key = Keys::getKey(domain_, "saturation_liquid");
@@ -237,7 +237,7 @@ void ObservableAqueous::ComputeObservation(
         mesh_->face_get_cells(f, Amanzi::AmanziMesh::Parallel_type::ALL, &cells);
 
 	int sign, c = cells[0];
-        const auto& normal = mesh_->face_normal(f, false, c, &sign);
+        mesh_->face_normal(f, false, c, &sign);
         double area = mesh_->face_area(f);
         double scale = 1.;
         if (domain_ == "fracture")

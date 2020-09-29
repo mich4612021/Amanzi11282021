@@ -112,7 +112,7 @@ TEST(FLOW_BOUNDARY_SOLVER) {
   S2->GetField("permeability", "flow")->set_initialized();
 
   double atm_pressure = 101325.0;
-  double rho = *S1->GetScalarData("fluid_density", passwd);
+  double rho = *S1->GetScalarData("const_fluid_density", passwd);
 
   Epetra_Vector& gravity1 = *S1->GetConstantVectorData("gravity", "state");
   gravity1[2] = -9.8;
@@ -166,7 +166,6 @@ TEST(FLOW_BOUNDARY_SOLVER) {
     int dir;
     const Point& norm = mesh2->face_normal(f, false, cells[0], &dir);
     if ((cells.size() == 1) && (norm[2]*dir > 0)) {
-      const Point& xc = mesh2->cell_centroid(cells[0]);
       // bnd_val1 = RPK1->BoundaryFaceValue(f, *S1->GetFieldData("pressure", passwd));
       bnd_val2 = RPK2->BoundaryFaceValue(f, *S2->GetFieldData("pressure", passwd));
       std::cout << ": " << f << " " << bnd_val2 << "\n";

@@ -36,9 +36,10 @@ namespace WhetStone {
 /* ******************************************************************
 * Constructor parses the parameter list
 ****************************************************************** */
-MFD3D_CrouzeixRaviartAnyOrder::MFD3D_CrouzeixRaviartAnyOrder(const Teuchos::ParameterList& plist,
-                                                 const Teuchos::RCP<const AmanziMesh::Mesh>& mesh)
-  : MFD3D(mesh)
+MFD3D_CrouzeixRaviartAnyOrder::MFD3D_CrouzeixRaviartAnyOrder(
+    const Teuchos::ParameterList& plist,
+    const Teuchos::RCP<const AmanziMesh::Mesh>& mesh)
+  : BilinearForm(mesh)
 {
   order_ = plist.get<int>("method order");
 }
@@ -202,7 +203,7 @@ int MFD3D_CrouzeixRaviartAnyOrder::H1consistency(
   Rtmp.Transpose(R_);
   Ac.Multiply(RG, Rtmp, false);
 
-  return WHETSTONE_ELEMENTAL_MATRIX_OK;
+  return 0;
 }
 
 
@@ -218,7 +219,7 @@ int MFD3D_CrouzeixRaviartAnyOrder::StiffnessMatrix(
   if (ok) return ok;
 
   StabilityScalar_(N, A);
-  return WHETSTONE_ELEMENTAL_MATRIX_OK;
+  return 0;
 }
 
 
@@ -249,12 +250,7 @@ void MFD3D_CrouzeixRaviartAnyOrder::ProjectorGradientCell_(
   StiffnessMatrix(c, T, A);  
 
   // number of degrees of freedom
-  Polynomial poly(d_, order_ -1), pf(d_ - 1, order_ - 1);
-  int ndf = pf.size();
-  int ndof = A.NumRows();
-
-  int ndof_f(nfaces * ndf);
-  int ndof_c(ndof - ndof_f);
+  Polynomial poly(d_, order_ -1);
 
   // create zero vector polynomial
   int dim = vf[0].size();

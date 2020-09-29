@@ -87,11 +87,11 @@
       </ParameterList>
 
       <ParameterList name="time integrator">
-	<Parameter name="linear solver" type="string" value="none"/>
-	<Parameter name="preconditioner" type="string" value="Trilinos ML"/>
-	<Parameter name="error control options" type="Array(string)" value="{pressure}"/>
+        <Parameter name="linear solver" type="string" value="none"/>
+        <Parameter name="preconditioner" type="string" value="Trilinos ML"/>
+        <Parameter name="error control options" type="Array(string)" value="{pressure}"/>
 
-	<ParameterList name="initialization">
+        <ParameterList name="initialization">
 	  <Parameter name="method" type="string" value="saturated solver"/>
 	  <Parameter name="linear solver" type="string" value="AmanziPCG"/>
 	  <Parameter name="clipping saturation value" type="double" value="0.6"/>
@@ -138,7 +138,7 @@
 	  <Parameter name="van Genuchten alpha" type="double" value="1.0"/>
 	  <Parameter name="van Genuchten m" type="double" value="0.5"/>
 	  <Parameter name="van Genuchten l" type="double" value="0.5"/>
-	  <Parameter name="residual saturation" type="double" value="0.1"/>
+	  <Parameter name="residual saturation liquid" type="double" value="0.1"/>
 	  <Parameter name="relative permeability model" type="string" value="Mualem"/>
 	</ParameterList>
 	<ParameterList name="WRM for Material 2">
@@ -146,7 +146,7 @@
 	  <Parameter name="water retention model" type="string" value="van Genuchten"/>
 	  <Parameter name="van Genuchten alpha" type="double" value="1.0"/>
 	  <Parameter name="van Genuchten m" type="double" value="0.5"/>
-	  <Parameter name="residual saturation" type="double" value="0.1"/>
+	  <Parameter name="residual saturation liquid" type="double" value="0.1"/>
 	</ParameterList>
       </ParameterList>
 
@@ -206,10 +206,10 @@
     </ParameterList>
 
     <ParameterList name="initial conditions">
-      <ParameterList name="fluid_density">
+      <ParameterList name="const_fluid_density">
         <Parameter name="value" type="double" value="998.0"/>
       </ParameterList>
-      <ParameterList name="fluid_viscosity">
+      <ParameterList name="const_fluid_viscosity">
         <Parameter name="value" type="double" value="0.001"/>
       </ParameterList>
       <ParameterList name="atmospheric_pressure">
@@ -246,7 +246,7 @@
   <!-- PRECONDITIONERS -->
   <ParameterList name="preconditioners">
     <ParameterList name="Trilinos ML">
-      <Parameter name="preconditioner type" type="string" value="ml"/>
+      <Parameter name="preconditioning method" type="string" value="ml"/>
       <ParameterList name="ml parameters">
         <Parameter name="ML output" type="int" value="0"/>
         <Parameter name="aggregation: damping factor" type="double" value="1.33"/>
