@@ -30,8 +30,6 @@ if (ALQUIMIA_LIBRARIES AND ALQUIMIA_INCLUDE_DIRS)
 
 else(ALQUIMIA_LIBRARIES AND ALQUIMIA_INCLUDE_DIRS)
 
-  message(STATUS "HERE ALQUIMIA_DIR=${ALQUIMIA_DIR}")
-
   # Cache variables
   if (ALQUIMIA_DIR)
     set(ALQUIMIA_DIR "${ALQUIMIA_DIR}" CACHE PATH "Path to search for Alquimia include and library files")
