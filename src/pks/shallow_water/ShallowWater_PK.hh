@@ -12,6 +12,8 @@
 #ifndef AMANZI_SHALLOW_WATER_PK_HH_
 #define AMANZI_SHALLOW_WATER_PK_HH_
 
+#include <memory>
+
 // TPLs
 #include "Epetra_Vector.h"
 #include "Epetra_IntVector.h"
@@ -25,6 +27,7 @@
 #include "DenseVector.hh"
 #include "Key.hh"
 #include "LimiterCell.hh"
+#include "NumericalFlux.hh"
 #include "PK.hh"
 #include "PK_Explicit.hh"
 #include "PK_Factory.hh"
@@ -101,6 +104,9 @@ class ShallowWater_PK : public PK_Physical,
 
   Key domain_;
 
+  // numerical flux
+  std::shared_ptr<NumericalFlux> numerical_flux_;
+
   // names of state fields
   Key velocity_key_, discharge_key_;
   Key ponded_depth_key_;
@@ -122,7 +128,6 @@ class ShallowWater_PK : public PK_Physical,
 
   // limited reconstruction
   Teuchos::RCP<Operators::ReconstructionCell> total_depth_grad_, bathymetry_grad_;
-  Teuchos::RCP<Operators::ReconstructionCell> velocity_x_grad_, velocity_y_grad_;
   Teuchos::RCP<Operators::ReconstructionCell> discharge_x_grad_, discharge_y_grad_;
   Teuchos::RCP<Operators::LimiterCell> limiter_;
 
