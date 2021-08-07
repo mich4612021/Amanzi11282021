@@ -13,6 +13,7 @@
 #include "eos_registration.hh"
 #include "MeshFactory.hh"
 #include "Mesh.hh"
+#include "numerical_flux_registration.hh"
 #include "PK_Factory.hh"
 #include "PK.hh"
 #include "pks_shallow_water_registration.hh"
