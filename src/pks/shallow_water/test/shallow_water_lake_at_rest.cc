@@ -123,16 +123,16 @@ void lake_at_rest_setIC(Teuchos::RCP<const Amanzi::AmanziMesh::Mesh> mesh, Teuch
 
       double area = norm(area_cross_product);
             
-      B_c[0][c] += ( area / mesh -> cell_volume(c) ) * ( B_n[0][face_nodes[0]] + B_n[0][face_nodes[1]] ) / 2;
+      B_c[0][c] += (area / mesh->cell_volume(c)) * (B_n[0][face_nodes[0]] + B_n[0][face_nodes[1]]) / 2;
     }
         
     // Perturb the solution; change time period t_new to at least 10.0
-//    if ((xc[0] - 0.3)*(xc[0] - 0.3) + (xc[1] - 0.3)*(xc[1] - 0.3) < 0.1 * 0.1) {
-//      ht_c[0][c] = H_inf + 0.1;
-//    }
-//    else {
-//      ht_c[0][c] = H_inf;
-//    }
+    // if ((xc[0] - 0.3)*(xc[0] - 0.3) + (xc[1] - 0.3)*(xc[1] - 0.3) < 0.1 * 0.1) {
+    //   ht_c[0][c] = H_inf + 0.1;
+    // }
+    // else {
+    //   ht_c[0][c] = H_inf;
+    // }
         
     ht_c[0][c] = H_inf;
     h_c[0][c] = ht_c[0][c] - B_c[0][c];
@@ -242,13 +242,7 @@ TEST(SHALLOW_WATER_LAKE_AT_REST) {
   // Rectangular mesh
   RCP<Mesh> mesh = meshfactory.create(0.0, 0.0, 1.0, 1.0, 20, 20, request_faces, request_edges);
     
-  // Polygonal meshes
-//  RCP<Mesh> mesh = meshfactory.create ("test/median15x16.exo");
-//  RCP<Mesh> mesh = meshfactory.create ("test/random40.exo");
-//  RCP<Mesh> mesh = meshfactory.create ("test/triangular16.exo");
-  
   // Create a state
-        
   Teuchos::ParameterList state_list = plist -> sublist ("state");
   RCP<State> S = rcp(new State(state_list));
   S->RegisterMesh("surface", mesh);
@@ -274,13 +268,6 @@ TEST(SHALLOW_WATER_LAKE_AT_REST) {
   const Epetra_MultiVector &ht = *S->GetFieldData("surface-total_depth")->ViewComponent("cell");
   const Epetra_MultiVector &vel = *S->GetFieldData("surface-velocity")->ViewComponent("cell");
   const Epetra_MultiVector &q = *S->GetFieldData("surface-discharge")->ViewComponent("cell");
-        
-  // Create a pid vector
-  Epetra_MultiVector pid(B);
-        
-  for (int c = 0; c < pid.MyLength(); ++c) {
-    pid[0][c] = MyPID;
-  }
         
   // Create screen io
   auto vo = Teuchos::rcp (new Amanzi::VerboseObject("ShallowWater", *plist));
@@ -309,7 +296,7 @@ TEST(SHALLOW_WATER_LAKE_AT_REST) {
             
     lake_at_rest_exact_field(mesh, ht_ex, vel_ex, t_out);
             
-    if (iter % 5 == 0) {
+    if (iter % 20 == 0) {
                
       io.InitializeCycle(t_out, iter, "");
                 
@@ -321,7 +308,6 @@ TEST(SHALLOW_WATER_LAKE_AT_REST) {
       io.WriteVector(*q(1), "qy", AmanziMesh::CELL);
       io.WriteVector(*B(0), "B", AmanziMesh::CELL);
       io.WriteVector(*Bn(0), "B_n", AmanziMesh::NODE);
-      io.WriteVector(*pid(0), "pid", AmanziMesh::CELL);
                 
       io.WriteVector(*ht_ex(0), "ht_ex", AmanziMesh::CELL);
       io.WriteVector(*vel_ex(0), "vx_ex", AmanziMesh::CELL);
@@ -379,7 +365,6 @@ TEST(SHALLOW_WATER_LAKE_AT_REST) {
   io.WriteVector(*q(1), "qy", AmanziMesh::CELL);
   io.WriteVector(*B(0), "B", AmanziMesh::CELL);
   io.WriteVector(*Bn(0), "B_n", AmanziMesh::NODE);
-  io.WriteVector(*pid(0), "pid", AmanziMesh::CELL);
         
   io.WriteVector(*ht_ex(0), "ht_ex", AmanziMesh::CELL);
   io.WriteVector(*vel_ex(0), "vx_ex", AmanziMesh::CELL);

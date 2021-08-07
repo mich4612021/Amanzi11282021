@@ -7,7 +7,7 @@
  provided in the top-level COPYRIGHT file.
  
  Author: Svetlana Tokareva (tokareva@lanl.gov)
- */
+*/
 
 // TPLs
 #include "Teuchos_RCP.hpp"
@@ -296,5 +296,5 @@ TEST(SHALLOW_WATER_2D_SMOOTH) {
 
   std::cout << "computed order = " << order << std::endl;
 
-  CHECK_CLOSE(1.5, order, 0.2);
+  CHECK_CLOSE(1.6, order, 0.2);
 }

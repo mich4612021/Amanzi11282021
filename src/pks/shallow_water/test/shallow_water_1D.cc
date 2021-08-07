@@ -234,7 +234,7 @@ TEST(SHALLOW_WATER_1D) {
 
     dam_break_1D_exact_field(mesh, hh_ex, vel_ex, t_out);
 
-    if (iter % 5 == 0) {
+    if (iter % 6 == 0) {
       io.InitializeCycle(t_out, iter, "");
       io.WriteVector(*hh(0), "depth", AmanziMesh::CELL);
       io.WriteVector(*ht(0), "total_depth", AmanziMesh::CELL);
@@ -251,6 +251,7 @@ TEST(SHALLOW_WATER_1D) {
     }
 
     dt = SWPK.get_dt();
+    CHECK(dt > 1.0e-4);
 
     if (iter < 10) dt *= 0.01;
 

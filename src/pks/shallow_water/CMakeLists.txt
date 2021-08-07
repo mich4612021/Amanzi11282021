@@ -65,6 +65,7 @@ set(sw_inc_files
   NumericalFlux_Rusanov.hh
   NumericalFlux_CentralUpwind.hh
   NumericalFluxFactory.hh
+  numerical_flux_registration.hh
   ShallowWater_PK.hh
   ShallowWaterBoundaryFunction.hh)
 
