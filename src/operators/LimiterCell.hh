@@ -51,21 +51,40 @@ class LimiterCell {
             Teuchos::RCP<const Epetra_MultiVector> flux = Teuchos::null);
 
   // -- limit gradient using boundary data
+  //    field is defined by mean value (field) and its gradient (field_gradient)
   void ApplyLimiter(Teuchos::RCP<const Epetra_MultiVector> field, int component,
-                    const Teuchos::RCP<CompositeVector>& gradient,
+                    const Teuchos::RCP<CompositeVector>& field_gradient,
                     const std::vector<int>& bc_model, const std::vector<double>& bc_value) {
+    use_field_centroid_ = false;
     AmanziMesh::Entity_ID_List ids(ncells_owned_);
     for (int c = 0; c < ncells_owned_; ++c) ids[c] = c;
-    ApplyLimiter(ids, field, component, gradient, bc_model, bc_value); 
+    ApplyLimiter(ids, field, component, field_gradient, bc_model, bc_value); 
   }
 
+  // -- limit gradient without boundary data
   void ApplyLimiter(Teuchos::RCP<const Epetra_MultiVector> field, int component,
-                    const Teuchos::RCP<CompositeVector>& gradient) {
+                    const Teuchos::RCP<CompositeVector>& field_gradient) {
+    use_field_centroid_ = false;
     std::vector<int> bc_model;
     std::vector<double> bc_value;
     AmanziMesh::Entity_ID_List ids(ncells_owned_);
     for (int c = 0; c < ncells_owned_; ++c) ids[c] = c;
-    ApplyLimiter(ids, field, component, gradient, bc_model, bc_value); 
+    ApplyLimiter(ids, field, component, field_gradient, bc_model, bc_value); 
+  }
+
+  // -- limit gradient without boundary data
+  //    field is defined by mean value, gradient and central point
+  void ApplyLimiter(Teuchos::RCP<const Epetra_MultiVector> field, int component,
+                    const Teuchos::RCP<CompositeVector>& field_gradient,
+                    const Teuchos::RCP<std::vector<AmanziGeometry::Point>> field_centroid) {
+    use_field_centroid_ = true;
+    field_centroid_ = field_centroid;
+
+    std::vector<int> bc_model;
+    std::vector<double> bc_value;
+    AmanziMesh::Entity_ID_List ids(ncells_owned_);
+    for (int c = 0; c < ncells_owned_; ++c) ids[c] = c;
+    ApplyLimiter(ids, field, component, field_gradient, bc_model, bc_value); 
   }
 
   // -- apply limiter in specified cells
@@ -82,6 +101,7 @@ class LimiterCell {
   // -- apply limiter in spcified cells
   void ApplyLimiter(Teuchos::RCP<const Epetra_MultiVector> field, const WhetStone::DG_Modal& dg,
                     const std::vector<int>& bc_model, const std::vector<double>& bc_value) {
+    use_field_centroid_ = false;
     AmanziMesh::Entity_ID_List ids(ncells_owned_);
     for (int c = 0; c < ncells_owned_; ++c) ids[c] = c;
     ApplyLimiter(ids, field, dg, bc_model, bc_value); 
@@ -111,13 +131,13 @@ class LimiterCell {
   double getValue(const AmanziGeometry::Point& gradient, int c, const AmanziGeometry::Point& p);
 
   // access
-  Teuchos::RCP<CompositeVector> gradient() { return gradient_; }
+  Teuchos::RCP<CompositeVector> gradient() { return field_gradient_; }
   Teuchos::RCP<Epetra_Vector> limiter() { return limiter_; }
   Teuchos::RCP<CompositeVector> bounds() { return bounds_; }
   int type() { return type_; }
 
   // modifiers
-  void set_gradient(const Teuchos::RCP<CompositeVector>& gradient) { gradient_ = gradient; }
+  void set_field_gradient(const Teuchos::RCP<CompositeVector>& gradient) { field_gradient_ = gradient; }
   void set_bounds(const Teuchos::RCP<CompositeVector>& bounds) { bounds_ = bounds; }
  
  private:
@@ -167,6 +187,8 @@ class LimiterCell {
   void LimiterExtensionTransportKuzmin_(
       const std::vector<double>& field_local_min, const std::vector<double>& field_local_max);
 
+  const AmanziGeometry::Point my_cell_centroid_(int c) const;
+
  private:
   Teuchos::RCP<const AmanziMesh::Mesh> mesh_;
   int dim;
@@ -174,7 +196,11 @@ class LimiterCell {
   int ncells_wghost_, nfaces_wghost_, nedges_wghost_, nnodes_wghost_;
 
   Teuchos::RCP<const Epetra_MultiVector> field_;
-  Teuchos::RCP<CompositeVector> gradient_, bounds_;
+  Teuchos::RCP<CompositeVector> field_gradient_;
+  Teuchos::RCP<std::vector<AmanziGeometry::Point> > field_centroid_;
+  bool use_field_centroid_;
+
+  Teuchos::RCP<CompositeVector> bounds_;
   Teuchos::RCP<Epetra_Vector> limiter_;
   int component_;
 

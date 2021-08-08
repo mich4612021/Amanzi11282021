@@ -18,8 +18,11 @@
 #include "DenseMatrix.hh"
 #include "lapack.hh"
 #include "Mesh.hh"
+#include "NumericalIntegration.hh"
 #include "OperatorDefs.hh"
 #include "Point.hh"
+#include "Polynomial.hh"
+
 #include "ReconstructionCell.hh"
 
 namespace Amanzi {
@@ -42,6 +45,11 @@ void ReconstructionCell::Init(Teuchos::ParameterList& plist)
 
   // process other parameters
   poly_order_ = plist.get<int>("polynomial order", 0);
+
+  if (use_weight_) {
+    int ncells_wghost = mesh_->num_entities(AmanziMesh::CELL, AmanziMesh::Parallel_type::ALL);
+    weight_centroid_ = Teuchos::rcp(new std::vector<AmanziGeometry::Point>(ncells_wghost));
+  }
 }
 
 
@@ -53,6 +61,8 @@ void ReconstructionCell::ComputeGradient(
     const AmanziMesh::Entity_ID_List& ids,
     const Teuchos::RCP<const Epetra_MultiVector>& field, int component)
 {
+  if (use_weight_) ComputeWeightCentroids_();
+
   field_ = field;
   component_ = component;
 
@@ -66,7 +76,7 @@ void ReconstructionCell::ComputeGradient(
   int ncells_owned = mesh_->num_entities(AmanziMesh::CELL, AmanziMesh::Parallel_type::OWNED);
 
   for (int c = 0; c < ncells_owned; c++) {
-    const AmanziGeometry::Point& xc = mesh_->cell_centroid(c);
+    const AmanziGeometry::Point& xc = my_cell_centroid_(c);
 
     // mesh_->cell_get_face_adj_cells(c, AmanziMesh::Parallel_type::ALL, &cells);
     CellFaceAdjCellsNonManifold_(c, AmanziMesh::Parallel_type::ALL, cells);
@@ -76,7 +86,7 @@ void ReconstructionCell::ComputeGradient(
     rhs.PutScalar(0.0);
 
     for (int n = 0; n < ncells; n++) {
-      const AmanziGeometry::Point& xc2 = mesh_->cell_centroid(cells[n]);
+      const AmanziGeometry::Point& xc2 = my_cell_centroid_(cells[n]);
       for (int i = 0; i < dim; i++) xcc[i] = xc2[i] - xc[i];
 
       double value = (*field_)[component_][cells[n]] - (*field_)[component_][c];
@@ -103,6 +113,40 @@ void ReconstructionCell::ComputeGradient(
   }
 
   gradient_->ScatterMasterToGhosted("cell");
+}
+
+
+/* ******************************************************************
+* Calculate mass-weighted centroids
+****************************************************************** */
+void ReconstructionCell::ComputeWeightCentroids_()
+{
+  const auto& grad = *weight_grad_->ViewComponent("cell", true);
+
+  WhetStone::Polynomial poly1(dim, 1), poly2(dim, 1);
+  std::vector<const WhetStone::PolynomialBase*> polys(2);
+
+  polys[0] = &poly1;
+  polys[1] = &poly2;
+
+  int ncells_wghost = mesh_->num_entities(AmanziMesh::CELL, AmanziMesh::Parallel_type::ALL);
+  for (int c = 0; c < ncells_wghost; ++c) {
+    poly1(0) = (*weight_mean_)[0][c];
+    for (int i = 0; i < dim; ++i) poly1(i + 1) = grad[i][c];
+    poly1.set_origin(mesh_->cell_centroid(c));
+
+    AmanziGeometry::Point xc(dim);
+    WhetStone::NumericalIntegration numi(mesh_);
+
+    for (int i = 0; i < dim; ++i) {
+      poly2(i + 1) = 1.0;
+      xc[i] = numi.IntegratePolynomialsCell(c, polys);
+      poly2(i + 1) = 0.0;
+    }
+
+    xc /= (mesh_->cell_volume(c) * (*weight_mean_)[0][c]);
+    (*weight_centroid_)[c] = xc;
+  }
 }
 
 
@@ -176,7 +220,7 @@ void ReconstructionCell::CellFaceAdjCellsNonManifold_(
 double ReconstructionCell::getValue(int c, const AmanziGeometry::Point& p)
 {
   Teuchos::RCP<Epetra_MultiVector> grad = gradient_->ViewComponent("cell", false);
-  const auto& xc = mesh_->cell_centroid(c);
+  const auto& xc = my_cell_centroid_(c);
 
   double value = (*field_)[component_][c];
   for (int i = 0; i < dim; i++) value += (*grad)[i][c] * (p[i] - xc[i]);
@@ -190,9 +234,20 @@ double ReconstructionCell::getValue(int c, const AmanziGeometry::Point& p)
 double ReconstructionCell::getValue(
     const AmanziGeometry::Point& gradient, int c, const AmanziGeometry::Point& p)
 {
-  const auto& xc = mesh_->cell_centroid(c);
+  const auto& xc = my_cell_centroid_(c);
   return (*field_)[component_][c] + gradient * (p - xc);
 }
+
+
+/* ******************************************************************
+* Select proper centroid
+****************************************************************** */
+const AmanziGeometry::Point ReconstructionCell::my_cell_centroid_(int c) const
+{
+  if (! use_weight_) return mesh_->cell_centroid(c);
+  else return (*weight_centroid_)[c];
+}
+
 
 }  // namespace Operator
 }  // namespace Amanzi

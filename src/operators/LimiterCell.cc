@@ -44,10 +44,11 @@ namespace Operators {
 LimiterCell::LimiterCell(Teuchos::RCP<const Amanzi::AmanziMesh::Mesh> mesh) 
   : mesh_(mesh),
     flux_(Teuchos::null),
-    gradient_(Teuchos::null),
+    field_gradient_(Teuchos::null),
     component_(0),
     cfl_(1.0),
-    external_bounds_(false)
+    external_bounds_(false),
+    use_field_centroid_(false)
 {
   dim = mesh_->space_dimension();
 
@@ -140,11 +141,11 @@ void LimiterCell::Init(Teuchos::ParameterList& plist,
 void LimiterCell::ApplyLimiter(
     const AmanziMesh::Entity_ID_List& ids,
     Teuchos::RCP<const Epetra_MultiVector> field, int component,
-    const Teuchos::RCP<CompositeVector>& gradient,
+    const Teuchos::RCP<CompositeVector>& field_gradient,
     const std::vector<int>& bc_model, const std::vector<double>& bc_value)
 {
   field_ = field;
-  gradient_ = gradient;
+  field_gradient_ = field_gradient;
   component_ = component;
 
   if (external_bounds_ && bounds_ == Teuchos::null) {
@@ -176,7 +177,7 @@ void LimiterCell::ApplyLimiter(
   // apply safety factor
   if (cfl_ != 1.0) {
     limiter_->Scale(cfl_);
-    gradient_->Scale(cfl_);
+    field_gradient_->Scale(cfl_);
   }
 }
 
@@ -186,7 +187,7 @@ void LimiterCell::ApplyLimiter(
 ****************************************************************** */
 void LimiterCell::ApplyLimiter(Teuchos::RCP<Epetra_MultiVector> limiter)
 {
-  Teuchos::RCP<Epetra_MultiVector> grad = gradient_->ViewComponent("cell", false);
+  Teuchos::RCP<Epetra_MultiVector> grad = field_gradient_->ViewComponent("cell", false);
 
   for (int c = 0; c < ncells_owned_; c++) {
     for (int i = 0; i < dim; i++) (*grad)[i][c] *= (*limiter)[0][c];
@@ -239,7 +240,7 @@ void LimiterCell::LimiterTensorial_(
   AmanziGeometry::Point gradient_c1(dim), gradient_c2(dim);
   AmanziGeometry::Point normal_new(dim), direction(dim), p(dim);
 
-  Epetra_MultiVector& grad = *gradient_->ViewComponent("cell", false);
+  Epetra_MultiVector& grad = *field_gradient_->ViewComponent("cell", false);
 
   std::vector<AmanziGeometry::Point> normals;
 
@@ -256,7 +257,7 @@ void LimiterCell::LimiterTensorial_(
     const auto& faces = mesh_->cell_get_faces(c);
     int nfaces = faces.size();
 
-    const AmanziGeometry::Point& xc = mesh_->cell_centroid(c);
+    const AmanziGeometry::Point& xc = my_cell_centroid_(c);
     for (int i = 0; i < dim; i++) gradient_c1[i] = grad[i][c];
     (*limiter_)[c] = norm(gradient_c1); 
 
@@ -328,7 +329,7 @@ void LimiterCell::LimiterExtensionTransportTensorial_()
 
   double u1f, u1;
 
-  auto& grad_c = *gradient_->ViewComponent("cell", false);
+  auto& grad_c = *field_gradient_->ViewComponent("cell", false);
   auto& bounds_c = *bounds_->ViewComponent("cell", true);
 
   for (int c = 0; c < ncells_owned_; c++) {
@@ -384,7 +385,7 @@ void LimiterCell::LimiterScalar_(
     Teuchos::RCP<Epetra_Vector> limiter, double (*func)(double))
 {
   limiter->PutScalar(1.0);
-  Epetra_MultiVector& grad = *gradient_->ViewComponent("cell", false);
+  Epetra_MultiVector& grad = *field_gradient_->ViewComponent("cell", false);
 
   double u1, u1x, u1_add, umin, umax;
   AmanziGeometry::Point gradient_c(dim), xv(dim);
@@ -403,7 +404,7 @@ void LimiterCell::LimiterScalar_(
     u1 = (*field_)[component_][c];
     double tol = sqrt(OPERATOR_LIMITER_TOLERANCE) * fabs(u1);
 
-    const AmanziGeometry::Point& xc = mesh_->cell_centroid(c);
+    const AmanziGeometry::Point& xc = my_cell_centroid_(c);
     for (int k = 0; k < dim; ++k) gradient_c[k] = grad[k][c];
 
     // only two options for control points are supported
@@ -457,11 +458,11 @@ void LimiterCell::LimiterExtensionTransportScalar_(
   double u1, u1f;
   AmanziGeometry::Point gradient_c1(dim);
 
-  auto& grad_c = *gradient_->ViewComponent("cell", false);
+  auto& grad_c = *field_gradient_->ViewComponent("cell", false);
   auto& bounds_c = *bounds_->ViewComponent("cell", true);
 
   for (int c = 0; c < ncells_owned_; c++) {
-    const AmanziGeometry::Point& xc = mesh_->cell_centroid(c);
+    const AmanziGeometry::Point& xc = my_cell_centroid_(c);
     const auto& faces = mesh_->cell_get_faces(c);
     int nfaces = faces.size();
 
@@ -685,7 +686,7 @@ void LimiterCell::LimiterKuzmin_(
     const AmanziMesh::Entity_ID_List& ids,
     const std::vector<int>& bc_model, const std::vector<double>& bc_value)
 {
-  Epetra_MultiVector& grad = *gradient_->ViewComponent("cell", false);
+  Epetra_MultiVector& grad = *field_gradient_->ViewComponent("cell", false);
 
   // calculate local extrema at nodes
   if (!external_bounds_)
@@ -774,7 +775,7 @@ void LimiterCell::LimiterKuzminCell_(int c,
 
   u1 = (*field_)[component_][c];
 
-  const AmanziGeometry::Point& xc = mesh_->cell_centroid(c);
+  const AmanziGeometry::Point& xc = my_cell_centroid_(c);
 
   normals.clear();  // normals to planes the define the feasiable set
   for (int loop = 0; loop < 2; loop++) {
@@ -825,7 +826,7 @@ void LimiterCell::LimiterExtensionTransportKuzmin_(
   AmanziGeometry::Point xp(dim);
   AmanziMesh::Entity_ID_List nodes;
 
-  auto& grad = *gradient_->ViewComponent("cell", false);
+  auto& grad = *field_gradient_->ViewComponent("cell", false);
 
   for (int c = 0; c < ncells_owned_; c++) {
     const auto& faces = mesh_->cell_get_faces(c);
@@ -1201,8 +1202,8 @@ void LimiterCell::getBounds(int c, int f, int stencil, double* umin, double* uma
 ****************************************************************** */
 double LimiterCell::getValue(int c, const AmanziGeometry::Point& p)
 {
-  Teuchos::RCP<Epetra_MultiVector> grad = gradient_->ViewComponent("cell", false);
-  const auto& xc = mesh_->cell_centroid(c);
+  Teuchos::RCP<Epetra_MultiVector> grad = field_gradient_->ViewComponent("cell", false);
+  const auto& xc = my_cell_centroid_(c);
 
   double value = (*field_)[component_][c];
   for (int i = 0; i < dim; i++) value += (*grad)[i][c] * (p[i] - xc[i]);
@@ -1216,9 +1217,20 @@ double LimiterCell::getValue(int c, const AmanziGeometry::Point& p)
 double LimiterCell::getValue(
     const AmanziGeometry::Point& gradient, int c, const AmanziGeometry::Point& p)
 {
-  const auto& xc = mesh_->cell_centroid(c);
+  const auto& xc = my_cell_centroid_(c);
   return (*field_)[component_][c] + gradient * (p - xc);
 }
+
+
+/* ******************************************************************
+* Select proper centroid.
+****************************************************************** */
+const AmanziGeometry::Point LimiterCell::my_cell_centroid_(int c) const
+{
+  if (! use_field_centroid_) return mesh_->cell_centroid(c);
+  else return (*field_centroid_)[c];
+}
+
 
 }  // namespace Operators
 }  // namespace Amanzi

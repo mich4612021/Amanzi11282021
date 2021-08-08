@@ -34,7 +34,7 @@
 /* *****************************************************************
 * Exactness on linear functions in two dimensions
 ***************************************************************** */
-TEST(RECONSTRUCTION_LINEAR_2D) {
+void RunLinear(int icase) {
   using namespace Amanzi;
   using namespace Amanzi::AmanziMesh;
   using namespace Amanzi::AmanziGeometry;
@@ -43,7 +43,7 @@ TEST(RECONSTRUCTION_LINEAR_2D) {
   auto comm = Amanzi::getDefaultComm();
   int MyPID = comm->MyPID();
 
-  if (MyPID == 0) std::cout << "\nTest: Exactness on linear functions in 2D." << std::endl;
+  if (MyPID == 0) std::cout << "\nTest: Exactness on linear functions in 2D, weight=" << icase << std::endl;
 
   // create rectangular mesh
   MeshFactory meshfactory(comm);
@@ -55,6 +55,13 @@ TEST(RECONSTRUCTION_LINEAR_2D) {
   Teuchos::RCP<Epetra_MultiVector> field = Teuchos::rcp(new Epetra_MultiVector(mesh->cell_map(true), 1));
   Epetra_MultiVector grad_exact(mesh->cell_map(false), 2);
 
+  // create optional picewise linear weight function
+  auto weight = Teuchos::rcp(new Epetra_MultiVector(mesh->cell_map(true), 1));
+  CompositeVectorSpace cvs;
+  cvs.SetMesh(mesh)->SetGhosted(true)->SetComponent("cell", AmanziMesh::CELL, 2);
+  auto weight_grad = Teuchos::rcp(new CompositeVector(cvs, true));
+  auto& weight_grad_c = *weight_grad->ViewComponent("cell", true);
+
   int ncells_owned = mesh->num_entities(AmanziMesh::CELL, AmanziMesh::Parallel_type::OWNED);
   int ncells_wghost = mesh->num_entities(AmanziMesh::CELL, AmanziMesh::Parallel_type::ALL);
 
@@ -65,6 +72,15 @@ TEST(RECONSTRUCTION_LINEAR_2D) {
       grad_exact[0][c] = 1.0;
       grad_exact[1][c] = 2.0;
     }
+
+    (*weight)[0][c] = 1.0;
+    if (icase == 2) {
+      (*weight)[0][c] = 1.0 + xc[0];
+      weight_grad_c[0][c] = 1.0;
+      weight_grad_c[1][c] = 2.0;
+
+      (*field)[0][c] = xc[0] + 2 * xc[1] + 5.0 / 588.0 / (1.0 + xc[0]);
+    }
   }
 
   // Compute reconstruction
@@ -73,18 +89,33 @@ TEST(RECONSTRUCTION_LINEAR_2D) {
   plist.set<int>("polynomial_order", 1);
   plist.set<bool>("limiter extension for transport", false);
 
-  ReconstructionCell lifting(mesh);
-  lifting.Init(plist);
-  lifting.ComputeGradient(field); 
+  ReconstructionCell* lifting;
+  if (icase == 0) lifting = new ReconstructionCell(mesh);
+  else lifting = new ReconstructionCell(mesh, weight, weight_grad);
+
+  lifting->Init(plist);
+  lifting->ComputeGradient(field); 
 
   // calculate gradient error
   double err_int, err_glb, gnorm;
-  Epetra_MultiVector& grad_computed = *lifting.gradient()->ViewComponent("cell");
+  Epetra_MultiVector& grad_computed = *lifting->gradient()->ViewComponent("cell");
 
   ComputeGradError(mesh, grad_computed, grad_exact, err_int, err_glb, gnorm);
   CHECK_CLOSE(0.0, err_int + err_glb, 1.0e-12);
 
   if (MyPID == 0) printf("errors (interior & global): %8.4f %8.4f\n", err_int, err_glb);
+
+  delete lifting;
+}
+
+
+TEST(RECONSTRUCTION_LINEAR_2D) {
+  RunLinear(0);
+}
+
+TEST(RECONSTRUCTION_LINEAR_2D_WEIGHT) {
+  RunLinear(1);
+  RunLinear(2);
 }
 
 

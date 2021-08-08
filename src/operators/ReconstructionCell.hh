@@ -35,8 +35,20 @@ namespace Operators {
 
 class ReconstructionCell : public Reconstruction {  
  public:
-  ReconstructionCell() {};
-  ReconstructionCell(Teuchos::RCP<const Amanzi::AmanziMesh::Mesh> mesh) : Reconstruction(mesh) {};
+  ReconstructionCell() : use_weight_(false) {};
+
+  ReconstructionCell(Teuchos::RCP<const Amanzi::AmanziMesh::Mesh> mesh) 
+    : Reconstruction(mesh),
+      use_weight_(false) {};
+
+  ReconstructionCell(Teuchos::RCP<const Amanzi::AmanziMesh::Mesh> mesh,
+                     Teuchos::RCP<const Epetra_MultiVector> weight_mean,
+                     Teuchos::RCP<const CompositeVector> weight_grad)
+    : Reconstruction(mesh),
+      use_weight_(true),
+      weight_mean_(weight_mean),
+      weight_grad_(weight_grad) {};
+
   ~ReconstructionCell() {};
 
   // save pointer to the already distributed field.
@@ -64,6 +76,8 @@ class ReconstructionCell : public Reconstruction {
   Teuchos::RCP<CompositeVector> gradient() { return gradient_; }
 
  private:
+  void ComputeWeightCentroids_();
+
   void PopulateLeastSquareSystem_(AmanziGeometry::Point& centroid,
                                   double field_value,
                                   WhetStone::DenseMatrix& matrix,
@@ -74,9 +88,18 @@ class ReconstructionCell : public Reconstruction {
   void CellFaceAdjCellsNonManifold_(AmanziMesh::Entity_ID c,
                                     AmanziMesh::Parallel_type ptype,
                                     std::vector<AmanziMesh::Entity_ID>& cells) const;
+
+  const AmanziGeometry::Point my_cell_centroid_(int c) const;
+
  private:
   int dim, poly_order_;
   Teuchos::RCP<CompositeVector> gradient_;
+
+  // weight
+  bool use_weight_;
+  Teuchos::RCP<std::vector<AmanziGeometry::Point> > weight_centroid_;
+  Teuchos::RCP<const Epetra_MultiVector> weight_mean_;
+  Teuchos::RCP<const CompositeVector> weight_grad_;
 };
 
 }  // namespace Operators
