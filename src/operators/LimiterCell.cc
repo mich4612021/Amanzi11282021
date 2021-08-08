@@ -756,7 +756,7 @@ void LimiterCell::LimiterKuzmin_(
 * Kuzmin's limiter use all neighbors of the given cell and limit 
 * gradient in this cell only.  
 ******************************************************************* */
-void LimiterCell::LimiterKuzminCell_(int cell,
+void LimiterCell::LimiterKuzminCell_(int c,
                                      AmanziGeometry::Point& gradient_c,
                                      const std::vector<double>& field_node_min_c,
                                      const std::vector<double>& field_node_max_c)
@@ -769,12 +769,12 @@ void LimiterCell::LimiterKuzminCell_(int cell,
   AmanziMesh::Entity_ID_List nodes;
   std::vector<AmanziGeometry::Point> normals;
 
-  mesh_->cell_get_nodes(cell, &nodes);
+  mesh_->cell_get_nodes(c, &nodes);
   int nnodes = nodes.size();
 
-  u1 = (*field_)[component_][cell];
+  u1 = (*field_)[component_][c];
 
-  const AmanziGeometry::Point& xc = mesh_->cell_centroid(cell);
+  const AmanziGeometry::Point& xc = mesh_->cell_centroid(c);
 
   normals.clear();  // normals to planes the define the feasiable set
   for (int loop = 0; loop < 2; loop++) {
@@ -784,7 +784,7 @@ void LimiterCell::LimiterKuzminCell_(int cell,
       double umax = field_node_max_c[i];
 
       mesh_->node_get_coordinates(v, &xp);
-      up = getValue(gradient_c, cell, xp);
+      up = getValue(gradient_c, c, xp);
 
       // check if umin <= up <= umax
       if (up < umin) {
