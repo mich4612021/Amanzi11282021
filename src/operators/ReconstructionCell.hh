@@ -74,6 +74,7 @@ class ReconstructionCell : public Reconstruction {
 
   // access
   Teuchos::RCP<CompositeVector> gradient() { return gradient_; }
+  Teuchos::RCP<std::vector<AmanziGeometry::Point> > centroid() { return weight_centroid_; }
 
  private:
   void ComputeWeightCentroids_();

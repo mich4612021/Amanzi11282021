@@ -81,7 +81,7 @@ class ShallowWater_PK : public PK_Physical,
                             
   // Bathymetry reconstruction on cell edge midpoints
   double Bathymetry_rectangular_cell_value(int, const AmanziGeometry::Point&, Epetra_MultiVector&);
-  double Bathymetry_edge_value(int, int, const AmanziGeometry::Point&, Epetra_MultiVector&);
+  double Bathymetry_edge_value(int, const AmanziGeometry::Point&, Epetra_MultiVector&);
 
   // due to rotational invariance of SW equations, we need flux in the x-direction only.
   std::vector<double> PhysicalFlux_x(const std::vector<double>&);
@@ -128,7 +128,8 @@ class ShallowWater_PK : public PK_Physical,
 
   // limited reconstruction
   Teuchos::RCP<Operators::ReconstructionCell> total_depth_grad_, bathymetry_grad_;
-  Teuchos::RCP<Operators::ReconstructionCell> discharge_x_grad_, discharge_y_grad_;
+  Teuchos::RCP<Operators::ReconstructionCell> ponded_depth_grad_;
+  Teuchos::RCP<Operators::ReconstructionCell> velocity_x_grad_, velocity_y_grad_;
   Teuchos::RCP<Operators::LimiterCell> limiter_;
 
   double cfl_;

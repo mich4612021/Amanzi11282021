@@ -131,6 +131,11 @@ void ReconstructionCell::ComputeWeightCentroids_()
 
   int ncells_wghost = mesh_->num_entities(AmanziMesh::CELL, AmanziMesh::Parallel_type::ALL);
   for (int c = 0; c < ncells_wghost; ++c) {
+    if ((*weight_mean_)[0][c] <= 1.0e-12) {
+      (*weight_centroid_)[c] = mesh_->cell_centroid(c);
+      continue;
+    }
+    
     poly1(0) = (*weight_mean_)[0][c];
     for (int i = 0; i < dim; ++i) poly1(i + 1) = grad[i][c];
     poly1.set_origin(mesh_->cell_centroid(c));

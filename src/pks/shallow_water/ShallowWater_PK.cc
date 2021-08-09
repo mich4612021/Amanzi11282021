@@ -174,11 +174,18 @@ void ShallowWater_PK::Initialize(const Teuchos::Ptr<State>& S)
   total_depth_grad_ = Teuchos::rcp(new Operators::ReconstructionCell(mesh_));
   total_depth_grad_->Init(plist);
 
-  discharge_x_grad_ = Teuchos::rcp(new Operators::ReconstructionCell(mesh_));
-  discharge_x_grad_->Init(plist);
+  ponded_depth_grad_ = Teuchos::rcp(new Operators::ReconstructionCell(mesh_));
+  ponded_depth_grad_->Init(plist);
 
-  discharge_y_grad_ = Teuchos::rcp(new Operators::ReconstructionCell(mesh_));
-  discharge_y_grad_->Init(plist);
+  velocity_x_grad_ = Teuchos::rcp(new Operators::ReconstructionCell(mesh_,
+      S_->GetFieldData(ponded_depth_key_)->ViewComponent("cell", true), 
+      ponded_depth_grad_->gradient()));
+  velocity_x_grad_->Init(plist);
+
+  velocity_y_grad_ = Teuchos::rcp(new Operators::ReconstructionCell(mesh_,
+      S_->GetFieldData(ponded_depth_key_)->ViewComponent("cell", true), 
+      ponded_depth_grad_->gradient()));
+  velocity_y_grad_->Init(plist);
 
   limiter_ = Teuchos::rcp(new Operators::LimiterCell(mesh_));
   limiter_->Init(plist);
@@ -248,19 +255,27 @@ bool ShallowWater_PK::AdvanceStep(double t_old, double t_new, bool reinit)
   S_->GetFieldData(discharge_key_)->ScatterMasterToGhosted("cell");
 
   // limited reconstructions
+  // -- depth
   auto tmp1 = S_->GetFieldData(total_depth_key_, passwd_)->ViewComponent("cell", true);
   total_depth_grad_->ComputeGradient(tmp1);
   limiter_->ApplyLimiter(tmp1, 0, total_depth_grad_->gradient());
   limiter_->gradient()->ScatterMasterToGhosted("cell");
 
-  auto tmp5 = S_->GetFieldData(discharge_key_, discharge_key_)->ViewComponent("cell", true);
-  discharge_x_grad_->ComputeGradient(tmp5, 0);
-  limiter_->ApplyLimiter(tmp5, 0, discharge_x_grad_->gradient());
+  auto tmp2 = S_->GetFieldData(ponded_depth_key_, passwd_)->ViewComponent("cell", true);
+  ponded_depth_grad_->ComputeGradient(tmp2);
+  limiter_->ApplyLimiter(tmp2, 0, ponded_depth_grad_->gradient());
   limiter_->gradient()->ScatterMasterToGhosted("cell");
 
-  auto tmp6 = S_->GetFieldData(discharge_key_, discharge_key_)->ViewComponent("cell", true);
-  discharge_y_grad_->ComputeGradient(tmp6, 1);
-  limiter_->ApplyLimiter(tmp6, 1, discharge_y_grad_->gradient());
+  auto tmp5 = S_->GetFieldData(velocity_key_, passwd_)->ViewComponent("cell", true);
+  velocity_x_grad_->ComputeGradient(tmp5, 0);
+  limiter_->ApplyLimiter(tmp5, 0, velocity_x_grad_->gradient(),
+                                  velocity_x_grad_->centroid());
+  limiter_->gradient()->ScatterMasterToGhosted("cell");
+
+  auto tmp6 = S_->GetFieldData(velocity_key_, passwd_)->ViewComponent("cell", true);
+  velocity_y_grad_->ComputeGradient(tmp6, 1);
+  limiter_->ApplyLimiter(tmp6, 1, velocity_y_grad_->gradient(),
+                                  velocity_y_grad_->centroid());
   limiter_->gradient()->ScatterMasterToGhosted("cell");
 
   // update boundary conditions
@@ -281,13 +296,10 @@ bool ShallowWater_PK::AdvanceStep(double t_old, double t_new, bool reinit)
   // U_i^{n+1} = U_i^n - dt/vol * (F_{i+1/2}^n - F_{i-1/2}^n) + dt * S_i
 
   for (int c = 0; c < ncells_owned; c++) {
-      
     const Amanzi::AmanziGeometry::Point& xc = mesh_->cell_centroid(c);
-
     double vol = mesh_->cell_volume(c);
 
     mesh_->cell_get_faces(c, &cfaces);
-    mesh_->cell_get_nodes(c, &cnodes);
     
     for (int i = 0; i < 3; i++) FS[i] = 0.0;
 
@@ -299,11 +311,8 @@ bool ShallowWater_PK::AdvanceStep(double t_old, double t_new, bool reinit)
       normal /= farea;
 
       double ht_rec = total_depth_grad_->getValue(c, xcf);
-  
-      int edge = cfaces[n];
-      double B_rec = Bathymetry_edge_value(c, edge, xcf, B_n);
+      double B_rec = Bathymetry_edge_value(f, xcf, B_n);
         
-
       if (ht_rec < B_rec) {
         ht_rec = ht_c[0][c];
         B_rec = B_c[0][c];
@@ -311,8 +320,8 @@ bool ShallowWater_PK::AdvanceStep(double t_old, double t_new, bool reinit)
       double h_rec = ht_rec - B_rec;
       ErrorDiagnostics_(c, h_rec, ht_rec, B_rec);
 
-      double qx_rec = discharge_x_grad_->getValue(c, xcf);
-      double qy_rec = discharge_y_grad_->getValue(c, xcf);
+      double qx_rec = velocity_x_grad_->getValue(c, xcf) * ponded_depth_grad_->getValue(c, xcf);
+      double qy_rec = velocity_y_grad_->getValue(c, xcf) * ponded_depth_grad_->getValue(c, xcf);
 
       double h2 = h_rec * h_rec;
       double factor = 2.0 * h_rec / (h2 + std::fmax(h2, eps2));
@@ -340,8 +349,7 @@ bool ShallowWater_PK::AdvanceStep(double t_old, double t_new, bool reinit)
         const Amanzi::AmanziGeometry::Point& xcn = mesh_->cell_centroid(cn);
           
         ht_rec = total_depth_grad_->getValue(cn, xcf);
-          
-        B_rec = Bathymetry_edge_value(cn, edge, xcf, B_n);
+        B_rec = Bathymetry_edge_value(f, xcf, B_n);
           
         if (ht_rec < B_rec) {
           ht_rec = ht_c[0][cn];
@@ -350,8 +358,8 @@ bool ShallowWater_PK::AdvanceStep(double t_old, double t_new, bool reinit)
         h_rec = ht_rec - B_rec;
         ErrorDiagnostics_(cn, h_rec, ht_rec, B_rec);
 
-        qx_rec = discharge_x_grad_->getValue(cn, xcf);
-        qy_rec = discharge_y_grad_->getValue(cn, xcf);
+        qx_rec = velocity_x_grad_->getValue(cn, xcf) * ponded_depth_grad_->getValue(cn, xcf);
+        qy_rec = velocity_y_grad_->getValue(cn, xcf) * ponded_depth_grad_->getValue(cn, xcf);
 
         h2 = h_rec * h_rec;
         factor = 2.0 * h_rec / (h2 + std::fmax(h2, eps2));
@@ -487,7 +495,7 @@ std::vector<double> ShallowWater_PK::NumericalSource(
     double ht_rec = total_depth_grad_->getValue(c, xcf);
       
     int e = cfaces[n];
-    double B_rec = Bathymetry_edge_value(c, e, xcf, B_n);
+    double B_rec = Bathymetry_edge_value(e, xcf, B_n);
 
     if (ht_rec < B_rec) {
       ht_rec = ht_c[0][c];
@@ -579,16 +587,12 @@ double ShallowWater_PK::Bathymetry_rectangular_cell_value(int c, const AmanziGeo
 //--------------------------------------------------------------
 // Bathymetry (Evaluate value at edge midpoint for a polygonal cell)
 //--------------------------------------------------------------
-
-double ShallowWater_PK::Bathymetry_edge_value(int c, int e, const AmanziGeometry::Point& xp, Epetra_MultiVector& B_n)
+double ShallowWater_PK::Bathymetry_edge_value(
+    int e, const AmanziGeometry::Point& xp, Epetra_MultiVector& B_n)
 {
-  double x = xp[0], y = xp[1];
-  AmanziMesh::Entity_ID_List face_nodes;
-  mesh_ ->face_get_nodes(e, &face_nodes);
-
-  double B_rec = ( B_n[0][face_nodes[0]] + B_n[0][face_nodes[1]] ) /2.0;
-    
-  return B_rec;
+  AmanziMesh::Entity_ID_List nodes;
+  mesh_->face_get_nodes(e, &nodes);
+  return (B_n[0][nodes[0]] + B_n[0][nodes[1]]) / 2;
 }
 
 
