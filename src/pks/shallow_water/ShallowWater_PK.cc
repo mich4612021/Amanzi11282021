@@ -340,10 +340,18 @@ bool ShallowWater_PK::AdvanceStep(double t_old, double t_new, bool reinit)
       int cn = WhetStone::cell_get_face_adj_cell(*mesh_, c, f);
 
       if (cn == -1) {
-        if (bcs_.size() > 0 && bcs_[0]->bc_find(f)){
-          for (int i = 0; i < 3; ++i){ UR[i] = bcs_[0]->bc_value(f)[i]; } }
-        else
+        if (bcs_.size() > 0 && bcs_[0]->bc_find(f)) {
+          UR[0] = bcs_[0]->bc_value(f)[0];
+          vx_rec = bcs_[0]->bc_value(f)[1];
+          vy_rec = bcs_[0]->bc_value(f)[2];
+
+          vn =  vx_rec * normal[0] + vy_rec * normal[1];
+          vt = -vx_rec * normal[1] + vy_rec * normal[0];
+          UR[1] = UR[0] * vn;
+          UR[2] = UR[0] * vt;
+        } else {
           UR = UL;
+        }
       }
       else {
         const Amanzi::AmanziGeometry::Point& xcn = mesh_->cell_centroid(cn);

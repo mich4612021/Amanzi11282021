@@ -91,7 +91,7 @@ class ShallowWater_PK : public PK_Physical,
   std::vector<double> NumericalFlux_x_CentralUpwind(const std::vector<double>&, const std::vector<double>&);
 
   std::vector<double> PhysicalSource(const std::vector<double>&);
-  std::vector<double> NumericalSource(const std::vector<double>&, int);
+  std::vector<double> NumericalSource(const std::vector<double>&, int c);
 
  private:
   void ErrorDiagnostics_(int c, double h, double B, double ht);
