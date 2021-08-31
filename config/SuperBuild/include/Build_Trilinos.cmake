@@ -227,7 +227,7 @@ set(Trilinos_CMAKE_EXTRA_ARGS
     "-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON"
     "-DNOX_ENABLE_ABSTRACT_IMPLEMENTATION_THYRA:BOOL=OFF"
     "-DNOX_ENABLE_THYRA_EPETRA_ADAPTERS:BOOL=OFF"    
-    "-DTpetra_ENABLE_DEPRECATED_CODE:BOOL=OFF"
+    "-DTpetra_ENABLE_DEPRECATED_CODE:BOOL=ON"
     )
 
 if (Trilinos_BUILD_TYPE)
@@ -313,6 +313,8 @@ if (ENABLE_Trilinos_Patch)
     trilinos-superludist.patch
     trilinos-ifpack.patch
     trilinos-ifpack2.patch
+    trilinos-riluk.patch
+    trilinos-shylu.patch
     )
   configure_file(${SuperBuild_TEMPLATE_FILES_DIR}/trilinos-patch-step.sh.in
                  ${Trilinos_prefix_dir}/trilinos-patch-step.sh

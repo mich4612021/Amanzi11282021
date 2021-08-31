@@ -482,13 +482,13 @@ set(PETSc_MD5_SUM        c1bfeeb3613f59049d312713b461a1b1)
 #
 set(Trilinos_VERSION_MAJOR 13)
 set(Trilinos_VERSION_MINOR 0)
-set(Trilinos_VERSION_PATCH afc4e525)
+set(Trilinos_VERSION_PATCH 9f3abce6)
 set(Trilinos_VERSION ${Trilinos_VERSION_MAJOR}-${Trilinos_VERSION_MINOR}-${Trilinos_VERSION_PATCH})
 set(Trilinos_URL_STRING     "https://github.com/trilinos/Trilinos/archive")
 set(Trilinos_ARCHIVE_FILE   trilinos-release-${Trilinos_VERSION}.tar.gz)
 set(Trilinos_SAVEAS_FILE    ${Trilinos_ARCHIVE_FILE})
 set(Trilinos_GIT_REPOSITORY "https://github.com/trilinos/Trilinos")
-set(Trilinos_GIT_TAG        "afc4e52595ab82f449f8a4676febbcfbf8223afc")
+set(Trilinos_GIT_TAG        "9f3abce601cdd813b12188e828ac79280c376c93")
 
 #
 # TPL: SEACAS
