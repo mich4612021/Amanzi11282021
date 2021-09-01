@@ -1,8 +1,8 @@
 diff --git a/packages/ifpack2/src/Ifpack2_RILUK_def.hpp b/packages/ifpack2/src/Ifpack2_RILUK_def.hpp
-index d44e271cb83..ad05a6f6710 100644
+index d44e271cb83..ebca21bbd52 100644
 --- a/packages/ifpack2/src/Ifpack2_RILUK_def.hpp
 +++ b/packages/ifpack2/src/Ifpack2_RILUK_def.hpp
-@@ -504,10 +504,25 @@ void RILUK<MatrixType>::initialize ()
+@@ -504,10 +504,22 @@ void RILUK<MatrixType>::initialize ()
  
      if (this->isKokkosKernelsSpiluk_) {
        this->KernelHandle_ = Teuchos::rcp (new kk_handle_type ());
@@ -13,17 +13,14 @@ index d44e271cb83..ad05a6f6710 100644
 +#ifdef KOKKOS_ENABLE_CUDA
 +      if (std::is_same<Kokkos::Cuda, HandleExecSpace>::value)
 +      {
-+        printf("SPILUKAlgorithm::SEQLVLSCHD_TP1CHK\n");
 +        KernelHandle_->create_spiluk_handle( KokkosSparse::Experimental::SPILUKAlgorithm::SEQLVLSCHD_TP1CHK, 
 +                                             A_local_->getNodeNumRows(),
 +                                             2*A_local_->getNodeNumEntries()*(LevelOfFill_+1), 
 +                                             2*A_local_->getNodeNumEntries()*(LevelOfFill_+1) );
-+        printf("DONE CREATE SPLIUK HANDLE\n");
 +      }
 +      else
 +#endif
 +      {
-+        printf("SPILUKAlgorithm::SEQLVLSCHD_TP1\n");
 +        KernelHandle_->create_spiluk_handle( KokkosSparse::Experimental::SPILUKAlgorithm::SEQLVLSCHD_TP1,
 +                                             A_local_->getNodeNumRows(),
 +                                             2*A_local_->getNodeNumEntries()*(LevelOfFill_+1),
@@ -164,10 +161,10 @@ index cb4679d65d7..e90b15d80df 100644
        throw std::runtime_error("Invalid SPILUKAlgorithm name");
    }
 diff --git a/packages/kokkos-kernels/src/sparse/impl/KokkosSparse_spiluk_numeric_impl.hpp b/packages/kokkos-kernels/src/sparse/impl/KokkosSparse_spiluk_numeric_impl.hpp
-index 8e2064fcd0d..dc1ef1c295f 100644
+index 8e2064fcd0d..d1903121813 100644
 --- a/packages/kokkos-kernels/src/sparse/impl/KokkosSparse_spiluk_numeric_impl.hpp
 +++ b/packages/kokkos-kernels/src/sparse/impl/KokkosSparse_spiluk_numeric_impl.hpp
-@@ -375,27 +375,58 @@ void iluk_numeric ( IlukHandle& thandle,
+@@ -375,27 +375,52 @@ void iluk_numeric ( IlukHandle& thandle,
    using size_type       = typename IlukHandle::size_type;
    using nnz_lno_t       = typename IlukHandle::nnz_lno_t;
    using HandleDeviceEntriesType = typename IlukHandle::nnz_lno_view_t;
@@ -201,20 +198,18 @@ index 8e2064fcd0d..dc1ef1c295f 100644
    Kokkos::deep_copy(level_ptr_h, level_ptr);
  
 -  HandleDeviceEntriesType level_idx = thandle.get_level_idx();
-+  std::cout<<"thangle"<<std::endl;
-+
+-
+-  using WorkViewType = Kokkos::View<nnz_lno_t**, Kokkos::Device<execution_space,memory_space>>;
+-  
+-  WorkViewType iw ( "iw", thandle.get_level_maxrows(), nrows );
+-  Kokkos::deep_copy(iw, nnz_lno_t(-1));
+-
 +  if ( thandle.get_algorithm() == KokkosSparse::Experimental::SPILUKAlgorithm::SEQLVLSCHD_TP1CHK ) {
 +    level_nchunks_h       = LevelHostViewType(Kokkos::view_alloc(Kokkos::WithoutInitializing, "Host level nchunks"),
 +                                              level_nchunks.extent(0));
 +    level_nrowsperchunk_h = LevelHostViewType(Kokkos::view_alloc(Kokkos::WithoutInitializing, "Host level nrowsperchunk"),
 +                                              level_nrowsperchunk.extent(0));
- 
--  using WorkViewType = Kokkos::View<nnz_lno_t**, Kokkos::Device<execution_space,memory_space>>;
--  
--  WorkViewType iw ( "iw", thandle.get_level_maxrows(), nrows );
--  Kokkos::deep_copy(iw, nnz_lno_t(-1));
-+    std::cout<<"Before copy"<<std::endl;
- 
++
 +    Kokkos::deep_copy(level_nchunks_h,       level_nchunks);
 +    Kokkos::deep_copy(level_nrowsperchunk_h, level_nrowsperchunk);
 +    //for ( size_type lvl = 0; lvl < nlevels; ++lvl ) {
@@ -222,8 +217,6 @@ index 8e2064fcd0d..dc1ef1c295f 100644
 +    //    printf("VINH CHECK iluk_numeric: lvl %d, lnchunks %ld, lnrowsperchunk %ld\n", lvl, level_nchunks_h(lvl), level_nrowsperchunk_h(lvl));
 +    //  }
 +    //}
-+    std::cout<<"After copy"<<std::endl;
-+
 +    iw = WorkViewType( Kokkos::view_alloc(Kokkos::WithoutInitializing, "iw"), thandle.get_level_maxrowsperchunk(), nrows );
 +    Kokkos::deep_copy(iw, nnz_lno_t(-1));
 +  }
@@ -234,7 +227,7 @@ index 8e2064fcd0d..dc1ef1c295f 100644
    // Main loop must be performed sequential. Question: Try out Cuda's graph stuff to reduce kernel launch overhead
    for ( size_type lvl = 0; lvl < nlevels; ++lvl ) {
      nnz_lno_t lev_start = level_ptr_h(lvl);
-@@ -438,6 +469,38 @@ void iluk_numeric ( IlukHandle& thandle,
+@@ -438,6 +463,38 @@ void iluk_numeric ( IlukHandle& thandle,
            Kokkos::parallel_for("parfor_l_team", policy_type( lev_end - lev_start , Kokkos::AUTO ), tstf);
          else
            Kokkos::parallel_for("parfor_l_team", policy_type( lev_end - lev_start , team_size ), tstf);
