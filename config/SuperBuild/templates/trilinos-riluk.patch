@@ -1,12 +1,11 @@
 diff --git a/packages/ifpack2/src/Ifpack2_RILUK_def.hpp b/packages/ifpack2/src/Ifpack2_RILUK_def.hpp
-index d44e271cb83..18a52847460 100644
+index d44e271cb83..ad05a6f6710 100644
 --- a/packages/ifpack2/src/Ifpack2_RILUK_def.hpp
 +++ b/packages/ifpack2/src/Ifpack2_RILUK_def.hpp
-@@ -503,11 +503,25 @@ void RILUK<MatrixType>::initialize ()
-     // we just copy the input matrix if it's not a CrsMatrix.
+@@ -504,10 +504,25 @@ void RILUK<MatrixType>::initialize ()
  
      if (this->isKokkosKernelsSpiluk_) {
--      this->KernelHandle_ = Teuchos::rcp (new kk_handle_type ());
+       this->KernelHandle_ = Teuchos::rcp (new kk_handle_type ());
 -      KernelHandle_->create_spiluk_handle( KokkosSparse::Experimental::SPILUKAlgorithm::SEQLVLSCHD_TP1, 
 -                                           A_local_->getNodeNumRows(),
 -                                           2*A_local_->getNodeNumEntries()*(LevelOfFill_+1), 
