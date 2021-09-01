@@ -33,31 +33,6 @@ index d44e271cb83..18a52847460 100644
      }
  
      {
-diff --git a/packages/kokkos-kernels/src/common/KokkosKernels_Handle.hpp b/packages/kokkos-kernels/src/common/KokkosKernels_Handle.hpp
-index fb557c6f519..51cf0011a3a 100644
---- a/packages/kokkos-kernels/src/common/KokkosKernels_Handle.hpp
-+++ b/packages/kokkos-kernels/src/common/KokkosKernels_Handle.hpp
-@@ -793,12 +793,19 @@ public:
-     return this->spilukHandle;
-   }
-   void create_spiluk_handle(KokkosSparse::Experimental::SPILUKAlgorithm algm, size_type nrows, size_type nnzL, size_type nnzU) {
--    this->destroy_spiluk_handle();
-+    std::cout<<"create handle"<<std::endl;
-+    //this->destroy_spiluk_handle();
-+    std::cout<<"destroyed"<<std::endl;
-     this->is_owner_of_the_spiluk_handle = true;
-+    std::cout<<"1"<<std::endl;
-     this->spilukHandle = new SPILUKHandleType(algm, nrows, nnzL, nnzU);
-+    std::cout<<"2"<<std::endl;
-     this->spilukHandle->reset_handle(nrows, nnzL, nnzU);
-+    std::cout<<"3"<<std::endl;
-     this->spilukHandle->set_team_size(this->team_work_size);
-+    std::cout<<"4"<<std::endl;
-     this->spilukHandle->set_vector_size(this->vector_size);
-+    std::cout<<"Create handle done"<<std::endl;
-   }
-   void destroy_spiluk_handle(){
-     if (is_owner_of_the_spiluk_handle && this->spilukHandle != nullptr)
 diff --git a/packages/kokkos-kernels/src/sparse/KokkosSparse_spiluk_handle.hpp b/packages/kokkos-kernels/src/sparse/KokkosSparse_spiluk_handle.hpp
 index cb4679d65d7..e90b15d80df 100644
 --- a/packages/kokkos-kernels/src/sparse/KokkosSparse_spiluk_handle.hpp
