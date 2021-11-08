@@ -1,7 +1,7 @@
 /* -*-  mode: c++; indent-tabs-mode: nil -*- */
 /*
-  Amanzi is released under the three-clause BSD License. 
-  The terms of use and "as is" disclaimer for this license are 
+  Amanzi is released under the three-clause BSD License.
+  The terms of use and "as is" disclaimer for this license are
   provided in the top-level COPYRIGHT file.
 
   Author: Ethan Coon (ecoon@lanl.gov)
@@ -79,21 +79,21 @@ class MeshLogical : public Mesh {
               const std::vector<AmanziGeometry::Point>* cell_centroids=nullptr,
               const Teuchos::RCP<const Teuchos::ParameterList>& plist=Teuchos::null);
 
-  
+
   void get_logical_geometry(std::vector<double>* const cell_volumes,
                             std::vector<double>* const face_areas,
                             std::vector<std::vector<AmanziGeometry::Point> >* const face_cell_bisectors,
                             std::vector<AmanziGeometry::Point>* const cell_centroids) const;
-      
+
   void set_logical_geometry(std::vector<double> const* const cell_volumes,
                             std::vector<double> const* const face_areas,
                             std::vector<std::vector<AmanziGeometry::Point> > const* const face_cell_bisectors,
                             std::vector<AmanziGeometry::Point> const* const cell_centroids=nullptr);
-      
+
 
   // for testing
   bool operator==(const MeshLogical& other);
-  
+
   // Get parallel type of entity - OWNED, GHOST, ALL (See MeshDefs.hh)
   virtual
   Parallel_type entity_get_ptype(const Entity_kind kind,
@@ -122,7 +122,7 @@ class MeshLogical : public Mesh {
   virtual
   Entity_ID GID(const Entity_ID lid, const Entity_kind kind) const override;
 
-  
+
   //
   // Mesh Entity Adjacencies
   //-------------------------
@@ -177,15 +177,6 @@ class MeshLogical : public Mesh {
                       const Parallel_type ptype,
                       Entity_ID_List *faceids) const override;
 
-  // Get faces of ptype of a particular cell that are connected to the
-  // given node - The order of faces is not guarnateed to be the same
-  // for corresponding nodes on different processors
-  virtual
-  void node_get_cell_faces(const Entity_ID nodeid,
-                           const Entity_ID cellid,
-                           const Parallel_type ptype,
-                           Entity_ID_List *faceids) const override;
-
   // Cells of type 'ptype' connected to an edge - The order of cells is
   // not guaranteed to be the same for corresponding edges on
   // different processors
@@ -213,13 +204,6 @@ class MeshLogical : public Mesh {
           const Parallel_type ptype,
           Entity_ID_List *fadj_cellids) const override;
 
-  // Node connected neighboring cells of given cell
-  // (a hex in a structured mesh has 26 node connected neighbors)
-  // The cells are returned in no particular order
-  virtual
-  void cell_get_node_adj_cells(const Entity_ID cellid,
-          const Parallel_type ptype,
-          Entity_ID_List *nadj_cellids) const override;
 
   //
   // Mesh entity geometry
@@ -298,23 +282,25 @@ class MeshLogical : public Mesh {
   //
   // Mesh Sets for ICs, BCs, Material Properties and whatever else
   //--------------------------------------------------------------
+  virtual
+  bool valid_set_type(const AmanziGeometry::RegionType rtype, const Entity_kind kind) const override {
+    return (rtype == AmanziGeometry::RegionType::ALL) ||
+      (rtype == AmanziGeometry::RegionType::ENUMERATED);
+  }
 
   // Get list of entities of type 'category' in set
-  using Mesh::get_set_entities;
-
   virtual
-  void get_set_entities(const Set_ID setid,
+  void get_set_entities(const std::string& setname,
                         const Entity_kind kind,
                         const Parallel_type ptype,
                         Entity_ID_List *entids) const override;
 
   virtual
-  void get_set_entities_and_vofs(const std::string setname,
+  void get_set_entities_and_vofs(const std::string& setname,
                                  const Entity_kind kind,
                                  const Parallel_type ptype,
                                  Entity_ID_List *entids,
                                  std::vector<double> *vofs) const override;
-
 
   // Miscellaneous functions
   virtual
@@ -333,12 +319,6 @@ class MeshLogical : public Mesh {
                              double *area,
                              AmanziGeometry::Point *centroid,
                              std::vector<AmanziGeometry::Point> *normals) const override;
-
-  // build the cache
-  virtual
-  int compute_cell_geometric_quantities_() const override;
-  virtual
-  int compute_face_geometric_quantities_() const override;
 
   // build maps
   void init_maps();
@@ -377,18 +357,6 @@ class MeshLogical : public Mesh {
   virtual
   void cell_get_edges_internal_(const Entity_ID cellid,
           Entity_ID_List *edgeids) const override;
-
-  // edges and directions of a 2D cell - this function is implemented
-  // in each mesh framework. The results are cached in the base class.
-  virtual
-  void cell_2D_get_edges_and_dirs_internal_(const Entity_ID cellid,
-          Entity_ID_List *edgeids,
-          std::vector<int> *edge_dirs) const override;
-
-  // Cache connectivity info.
-  virtual
-  void cache_cell_face_info_() const override;
-
 
   virtual
   int build_columns_() const;

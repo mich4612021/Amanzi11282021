@@ -24,6 +24,7 @@
 #include "exceptions.hh"
 #include "InverseFactory.hh"
 #include "Mesh.hh"
+#include "Mesh_Algorithms.hh"
 #include "OperatorDefs.hh"
 #include "PDE_DiffusionFactory.hh"
 #include "PK_Utils.hh"
@@ -38,7 +39,6 @@
 #include "RelPermEvaluator.hh"
 #include "Richards_PK.hh"
 #include "VWContentEvaluator.hh"
-#include "VWContentEvaluatorFactory.hh"
 #include "WRMEvaluator.hh"
 #include "WRM.hh"
 
@@ -52,6 +52,7 @@ Richards_PK::Richards_PK(Teuchos::ParameterList& pk_tree,
                          const Teuchos::RCP<Teuchos::ParameterList>& glist,
                          const Teuchos::RCP<State>& S,
                          const Teuchos::RCP<TreeVector>& soln) :
+  PK(pk_tree, glist, S, soln),
   Flow_PK(pk_tree, glist, S, soln),
   glist_(glist),
   soln_(soln)
@@ -169,7 +170,7 @@ void Richards_PK::Setup(const Teuchos::Ptr<State>& S)
   if (!S->HasField(pressure_key_)) {
     S->RequireField(pressure_key_, passwd_)->SetMesh(mesh_)->SetGhosted(true)
       ->SetComponents(names, locations, ndofs);
-    AddDefaultPrimaryEvaluator(pressure_key_);
+    AddDefaultPrimaryEvaluator_(pressure_key_);
   }
 
   // Require conserved quantity.
@@ -182,9 +183,9 @@ void Richards_PK::Setup(const Teuchos::Ptr<State>& S)
     vwc_list.set<std::string>("water content key", water_content_key_)
             .set<std::string>("pressure key", pressure_key_)
             .set<std::string>("saturation key", saturation_liquid_key_)
-            .set<std::string>("porosity key", porosity_key_);
-    VWContentEvaluatorFactory fac;
-    Teuchos::RCP<VWContentEvaluator> eval = fac.Create(vwc_model, vwc_list);
+            .set<std::string>("porosity key", porosity_key_)
+            .set<std::string>("water content model", vwc_model);
+    auto eval = Teuchos::rcp(new VWContentEvaluator(vwc_list));
     S->SetFieldEvaluator(water_content_key_, eval);
   }
 
@@ -292,7 +293,7 @@ void Richards_PK::Setup(const Teuchos::Ptr<State>& S)
       ->AddComponent("boundary_face", AmanziMesh::BOUNDARY_FACE, 1);
 
     double rho = glist_->sublist("state").sublist("initial conditions")
-                        .sublist("const_fluid_density").get<double>("value", 1000.0);
+                        .sublist("const_fluid_density").get<double>("value");
     double n_l = rho / CommonDefs::MOLAR_MASS_H2O;
 
     Teuchos::ParameterList& wc_eval = S->FEList().sublist(mol_density_liquid_key_);
@@ -418,7 +419,7 @@ void Richards_PK::Initialize(const Teuchos::Ptr<State>& S)
   relperm_ = Teuchos::rcp(new RelPerm(*upw_list, mesh_, atm_pressure_, wrm_));
 
   Operators::UpwindFactory<RelPerm> upwind_factory;
-  upwind_ = upwind_factory.Create(mesh_, relperm_, *upw_list);
+  upwind_ = upwind_factory.Create(mesh_, *upw_list, relperm_);
 
   std::string upw_upd = upw_list->get<std::string>("upwind frequency", "every timestep");
   if (upw_upd == "every nonlinear iteration") upwind_frequency_ = FLOW_UPWIND_UPDATE_ITERATION;
@@ -514,6 +515,7 @@ void Richards_PK::Initialize(const Teuchos::Ptr<State>& S)
   if (ti_list_->isSublist("pressure-lambda constraints") && pressure.HasComponent("face")) {
     DeriveFaceValuesFromCellValues(*pressure.ViewComponent("cell"),
                                    *pressure.ViewComponent("face"));
+    Teuchos::rcp_dynamic_cast<Field_CompositeVector>(S->GetField(pressure_key_, passwd_))->set_initialized("face");
   }
 
   // error control options
@@ -706,6 +708,7 @@ void Richards_PK::Initialize(const Teuchos::Ptr<State>& S)
 
   // Verbose output of initialization statistics.
   InitializeStatistics_();
+
 }
 
 
@@ -1001,7 +1004,7 @@ double Richards_PK::BoundaryFaceValue(int f, const CompositeVector& u)
     const Epetra_MultiVector& u_face = *u.ViewComponent("face");
     face_value = u_face[0][f];
   } else {
-    int c = BoundaryFaceGetCell(f);
+    int c = AmanziMesh::getFaceOnBoundaryInternalCell(*mesh_, f);
     face_value = DeriveBoundaryFaceValue(f, u, wrm_->second[(*wrm_->first)[c]]);
   }
   return face_value;

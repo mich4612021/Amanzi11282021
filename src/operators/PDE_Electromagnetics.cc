@@ -98,8 +98,8 @@ void PDE_Electromagnetics::ApplyBCs_Edge_(
     const Teuchos::Ptr<const BCs>& bc_e,
     bool primary, bool eliminate, bool essential_eqn)
 {
-  AmanziMesh::Entity_ID_List edges, faces, cells;
-  std::vector<int> edirs, fdirs;
+  AmanziMesh::Entity_ID_List edges, cells;
+  std::vector<int> edirs;
 
   global_op_->rhs()->PutScalarGhosted(0.0);
   Epetra_MultiVector& rhs_edge = *global_op_->rhs()->ViewComponent("edge", true);
@@ -130,7 +130,8 @@ void PDE_Electromagnetics::ApplyBCs_Edge_(
       const std::vector<int>& bc_model = bc_f->bc_model();
       const std::vector<AmanziGeometry::Point>& bc_value = bc_f->bc_value_point();
 
-      mesh_->cell_get_faces_and_dirs(c, &faces, &fdirs);
+      const auto& faces = mesh_->cell_get_faces(c);
+      const auto& fdirs = mesh_->cell_get_face_dirs(c);
       int nfaces = faces.size();
 
       for (int n = 0; n != nfaces; ++n) {
@@ -274,6 +275,57 @@ void PDE_Electromagnetics::Init_(Teuchos::ParameterList& plist)
   // other parameters
   K_ = Teuchos::null;
   K_symmetric_ = (plist.get<std::string>("diffusion tensor", "symmetric") == "symmetric");
+}
+
+
+/* ******************************************************************
+* Additional data for AMS solver: coordinates of nodes
+****************************************************************** */
+Teuchos::RCP<Epetra_MultiVector> PDE_Electromagnetics::GraphGeometry()
+{
+  int d = mesh_->space_dimension();
+  auto map = mesh_->node_map(false);
+  auto xyz = Teuchos::rcp(new Epetra_MultiVector(map, d));
+
+  AmanziGeometry::Point xv;
+  for (int n = 0; n < nnodes_owned; ++n) {
+    mesh_->node_get_coordinates(n, &xv);
+    for (int i = 0; i < d; ++i) (*xyz)[i][n] = xv[i];
+  }
+
+  return xyz;
+}
+
+
+/* ******************************************************************
+* Additional data for AMS solver: gradient
+****************************************************************** */
+Teuchos::RCP<Epetra_CrsMatrix> PDE_Electromagnetics::GradientOperator()
+{
+  auto map_row = mesh_->edge_map(false);
+  auto map_col = mesh_->node_map(false);
+  auto map_col_wghost = mesh_->node_map(true);
+  auto G = Teuchos::rcp(new Epetra_CrsMatrix(Copy, map_row, map_col_wghost, 2));
+
+  int ierr(0), n1, n2, lid_c[2];
+  double values[2];
+
+  for (int e = 0; e != nedges_owned; ++e) {
+    double len = mesh_->edge_length(e);
+    mesh_->edge_get_nodes(e, &n1, &n2);
+
+    lid_c[0] = map_col_wghost.GID(n1); 
+    lid_c[1] = map_col_wghost.GID(n2); 
+
+    values[0] =-1.0 / len;
+    values[1] = 1.0 / len;
+
+    ierr |= G->InsertGlobalValues(map_row.GID(e), 2, values, lid_c);
+  }
+  AMANZI_ASSERT(!ierr);
+
+  G->FillComplete(map_col, map_row);
+  return G;
 }
 
 }  // namespace Operators

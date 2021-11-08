@@ -1,20 +1,20 @@
 # -*- mode: cmake -*-
 
 #
-# Amanzi ALQUIMIA Find Module
+# Amanzi Alquimia Find Module
 #
 # Usage:
-#    Control the search through ALQUIMIA_DIR or setting environment variable
-#    ALQUIMIA_ROOT to the ALQUIMIA installation prefix.
+#    Control the search through Alquimia_DIR or setting environment variable
+#    Alquimia_ROOT to the Alquimia installation prefix.
 #
 #    This module does not search default paths! 
 #
 #    Following variables are set:
-#    ALQUIMIA_FOUND            (BOOL)       Flag indicating if ALQUIMIA was found
-#    ALQUIMIA_INCLUDE_DIR      (PATH)       Path to the ALQUIMIA include file
-#    ALQUIMIA_INCLUDE_DIRS     (LIST)       List of all required include files
-#    ALQUIMIA_LIBRARY_DIR      (PATH)       Path to the ALQUIMIA library
-#    ALQUIMIA_LIBRARIES        (LIST)       List of all required ALQUIMIA libraries
+#    Alquimia_FOUND            (BOOL)       Flag indicating if Alquimia was found
+#    Alquimia_INCLUDE_DIR      (PATH)       Path to the Alquimia include file
+#    Alquimia_INCLUDE_DIRS     (LIST)       List of all required include files
+#    Alquimia_LIBRARY_DIR      (PATH)       Path to the Alquimia library
+#    Alquimia_LIBRARIES        (LIST)       List of all required Alquimia libraries
 #
 # #############################################################################
 
@@ -24,25 +24,36 @@ include(AddImportedLibrary)
 include(PrintVariable)
 include(AddPackageDependency)
 
-if (ALQUIMIA_LIBRARIES AND ALQUIMIA_INCLUDE_DIRS)
+if (Alquimia_LIBRARIES AND Alquimia_INCLUDE_DIRS)
 
   # Do nothing. Variables are set. No need to search again
 
 else(ALQUIMIA_LIBRARIES AND ALQUIMIA_INCLUDE_DIRS)
+elseif(Alquimia_DIR)
 
   # Cache variables
   if (ALQUIMIA_DIR)
     set(ALQUIMIA_DIR "${ALQUIMIA_DIR}" CACHE PATH "Path to search for Alquimia include and library files")
   endif()
+  set(ALQUIMIA_INCLUDE_DIR ${ALQUIMIA_DIR}/include)
+  set(ALQUIMIA_LIBRARY_DIR ${ALQUIMIA_DIR}/lib)
+  set(ALQUIMIA_TARGET alquimia)
 
   if (ALQUIMIA_INCLUDE_DIR)
     set(ALQUIMIA_INCLUDE_DIR "${ALQUIMIA_INCLUDE_DIR}" CACHE PATH "Path to search for Alquimia include files")
   endif()
-
+  find_library(_Alquimia_LIBRARY
+               NAMES alquimia
+               PATHS ${Alquimia_LIBRARY_DIR})
   if (ALQUIMIA_LIBRARY_DIR)
     set(ALQUIMIA_LIBRARY_DIR "${ALQUIMIA_LIBRARY_DIR}" CACHE PATH "Path to search for Alquimia library files")
   endif()
-
+  if (_Alquimia_LIBRARY)
+    add_imported_library(${Alquimia_TARGET} 
+                         LOCATION ${_Alquimia_LIBRARY}
+                         LINK_LANGUAGES "C")
+    set(Alquimia_LIBRARY ${Alquimia_TARGET})
+  endif()    
     
   # Search for include files
   # Search order preference:
@@ -167,6 +178,9 @@ else(ALQUIMIA_LIBRARIES AND ALQUIMIA_INCLUDE_DIRS)
     set(ALQUIMIA_CMAKE_CONFIG_FILE ${ALQUIMIA_DIR}/share/alquimia/alquimia.cmake)
     if (EXISTS ${ALQUIMIA_CMAKE_CONFIG_FILE})
       include(${ALQUIMIA_CMAKE_CONFIG_FILE})
+  # Define the LIBRARIES and INCLUDE_DIRS
+  set(Alquimia_INCLUDE_DIRS ${Alquimia_INCLUDE_DIR})
+  set(Alquimia_LIBRARIES ${Alquimia_LIBRARY} ${CrunchTope_LIBRARY} ${PFLOTRAN_LIBRARIES})
 
       # Include paths
       if (ALQUIMIA_PACKAGE_INCLUDES)
@@ -186,11 +200,22 @@ else(ALQUIMIA_LIBRARIES AND ALQUIMIA_INCLUDE_DIRS)
   endif()  
    
 endif(ALQUIMIA_LIBRARIES AND ALQUIMIA_INCLUDE_DIRS) 
+endif(Alquimia_LIBRARIES AND Alquimia_INCLUDE_DIRS)    
 
 # Send useful message if everything is found
 find_package_handle_standard_args(Alquimia DEFAULT_MSG
                                   ALQUIMIA_INCLUDE_DIR
                                   ALQUIMIA_LIBRARIES)
+find_package_handle_standard_args(Alquimia DEFAULT_MSG
+                                  Alquimia_INCLUDE_DIRS
+                                  Alquimia_LIBRARIES)
+
+# find_package)handle)standard_args should set Alquimia_FOUND but it does not!
+if (Alquimia_LIBRARIES AND Alquimia_INCLUDE_DIRS)
+  set(Alquimia_FOUND TRUE)
+else()
+  set(Alquimia_FOUND FALSE)
+endif()
 
 mark_as_advanced(
   ALQUIMIA_INCLUDE_DIR
@@ -198,4 +223,8 @@ mark_as_advanced(
   ALQUIMIA_LIBRARY
   ALQUIMIA_LIBRARIES
   ALQUIMIA_LIBRARY_DIR
+  Alquimia_INCLUDE_DIR
+  Alquimia_LIBRARY_DIR
+  Alquimia_LIBRARY
+  Alquimia_LIBRARIES
 )

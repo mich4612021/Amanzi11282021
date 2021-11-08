@@ -33,7 +33,7 @@ include_directories(${GEOMETRY_SOURCE_DIR})
 include_directories(${MESH_FACTORY_SOURCE_DIR})
 include_directories(${MESH_SOURCE_DIR})
 include_directories(${MFUNCS_SOURCE_DIR})
-include_directories(${MSTK_SOURCE_DIR})
+include_directories(${MESH_MSTK_SOURCE_DIR})
 include_directories(${OUTPUT_SOURCE_DIR})
 include_directories(${OPERATORS_SOURCE_DIR})
 include_directories(${PKS_SOURCE_DIR})
@@ -60,6 +60,7 @@ set(transport_inc_files
   MultiscaleTransportPorosity_GDPM.hh
   TransportDomainFunction.hh
   TransportBoundaryFunction_Alquimia.hh
+  TransportBoundaryFunction_Chemistry.hh
   TransportSourceFunction_Alquimia.hh
   TransportDefs.hh
   Transport_PK.hh
@@ -84,8 +85,8 @@ add_amanzi_library(transport
                    LINK_LIBS geometry operators mesh error_handling state data_structures 
                              ${geochem_lib} chemistry_pk time_integration ${Epetra_LIBRARIES})
 
-
-if ( BUILD_TESTS )
+# note that these tests test the Amanzi transport PK                           
+if (BUILD_TESTS AND ENABLE_AmanziPhysicsModule)
     # Add UnitTest includes
     include_directories(${UnitTest_INCLUDE_DIRS})
 
@@ -162,7 +163,7 @@ if ( BUILD_TESTS )
                     SOURCE test/Main.cc test/transport_subcycling.cc
                     LINK_LIBS ${amanzi_libs} ${UnitTest_LIBRARIES} ${HDF5_LIBRARIES})
 
-    if ( ENABLE_MSTK_Mesh )
+    if (ENABLE_MESH_MSTK)
        add_amanzi_test(transport_parallel_mstk transport_parallel_mstk
                        KIND int
                        NPROCS 4 
@@ -176,20 +177,10 @@ if ( BUILD_TESTS )
                        LINK_LIBS ${amanzi_libs} ${UnitTest_LIBRARIES} ${HDF5_LIBRARIES})
     endif()    
 
-    if ( ENABLE_STK_Mesh )
-        add_amanzi_test(transport_parallel_read_stk transport_parallel_read_stk
-                       KIND int
-                       NPROCS 4 
-                       SOURCE test/Main.cc test/transport_parallel_read_stk.cc
-                       LINK_LIBS ${amanzi_libs} ${UnitTest_LIBRARIES} ${HDF5_LIBRARIES})
-    endif()    
-
-     # fractures
+    # fractures
     add_amanzi_test(transport_fractures transport_fractures
                     KIND unit
                     NPROCS 2
                     SOURCE test/Main.cc test/transport_fractures.cc
                     LINK_LIBS ${amanzi_libs} ${UnitTest_LIBRARIES} ${HDF5_LIBRARIES})
-
 endif()
-

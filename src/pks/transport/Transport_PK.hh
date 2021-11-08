@@ -34,6 +34,7 @@
 #include "Units.hh"
 #include "VerboseObject.hh"
 
+#include "Chemistry_PK.hh"
 #ifdef ALQUIMIA_ENABLED
 #include "Alquimia_PK.hh"
 #include "ChemistryEngine.hh"
@@ -76,17 +77,15 @@ class Transport_PK : public PK_Physical {
   virtual void CommitStep(double t_old, double t_new, const Teuchos::RCP<State>& S) override;
   virtual void CalculateDiagnostics(const Teuchos::RCP<State>& S) override {};
 
-  virtual std::string name() override { return passwd_; }
+  virtual std::string name() override { return "transport"; }
 
   // main transport members
   // -- calculation of a stable time step needs saturations and darcy flux
   double StableTimeStep();
 
   // -- coupling with chemistry
-#ifdef ALQUIMIA_ENABLED
-  void SetupAlquimia(Teuchos::RCP<AmanziChemistry::Alquimia_PK> chem_pk,
-                     Teuchos::RCP<AmanziChemistry::ChemistryEngine> chem_engine);
-#endif
+  void SetupChemistry(Teuchos::RCP<AmanziChemistry::Chemistry_PK> chem_pk) { chem_pk_ = chem_pk; }
+  void SetupAlquimia();
 
   // -- access members  
   inline double cfl() { return cfl_; }
@@ -202,8 +201,9 @@ class Transport_PK : public PK_Physical {
   bool subcycling_, use_transport_porosity_;
   int dim;
 
+  Teuchos::RCP<AmanziChemistry::Chemistry_PK> chem_pk_;
 #ifdef ALQUIMIA_ENABLED
-  Teuchos::RCP<AmanziChemistry::Alquimia_PK> chem_pk_;
+  Teuchos::RCP<AmanziChemistry::Alquimia_PK> alquimia_pk_;
   Teuchos::RCP<AmanziChemistry::ChemistryEngine> chem_engine_;
 #endif
 

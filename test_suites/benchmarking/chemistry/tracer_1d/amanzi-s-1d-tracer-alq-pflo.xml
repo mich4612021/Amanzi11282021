@@ -23,7 +23,7 @@
   <process_kernels>
     <flow model="saturated" state="on"/>
     <transport state="on"/>
-    <chemistry state="on" engine="pflotran+" input_filename="1d-tracer.in" database="tracer.dat" />
+    <chemistry state="on" engine="pflotran" input_filename="1d-tracer.in" database="tracer.dat" />
   </process_kernels>
 
   <phases>
@@ -32,7 +32,7 @@
       <density>998.2</density>
       <dissolved_components>
 	<primaries>
-          <primary backward_rate="0.0" coefficient_of_diffusion="1.0E-9" forward_rate="0.0">tracer</primary>
+          <primary coefficient_of_diffusion="1.0E-9">tracer</primary>
 	</primaries>
       </dissolved_components>
     </liquid_phase>

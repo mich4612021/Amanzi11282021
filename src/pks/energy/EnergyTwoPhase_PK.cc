@@ -13,9 +13,9 @@
 */
 
 // Amanzi
-#include "EOSEvaluator.hh"
 #include "PDE_DiffusionFactory.hh"
 #include "PDE_AdvectionUpwindFactory.hh"
+#include "UpwindFactory.hh"
 
 // Amanzi::Energy
 #include "EnergyTwoPhase_PK.hh"
@@ -35,6 +35,7 @@ EnergyTwoPhase_PK::EnergyTwoPhase_PK(
                    const Teuchos::RCP<Teuchos::ParameterList>& glist,
                    const Teuchos::RCP<State>& S,
                    const Teuchos::RCP<TreeVector>& soln) :
+    PK(pk_tree, glist, S, soln),
     Energy_PK(pk_tree, glist, S, soln),
     soln_(soln)
 {
@@ -140,7 +141,6 @@ void EnergyTwoPhase_PK::Initialize(const Teuchos::Ptr<State>& S)
   op_matrix_diff_->SetBCs(op_bc_, op_bc_);
   op_matrix_ = op_matrix_diff_->global_operator();
   op_matrix_->Init();
-  op_matrix_diff_->SetScalarCoefficient(S->GetFieldData(conductivity_key_), Teuchos::null);
 
   Teuchos::ParameterList oplist_adv = ep_list_->sublist("operators").sublist("advection operator");
   op_matrix_advection_ = opfactory_adv.Create(oplist_adv, mesh_);
@@ -155,7 +155,19 @@ void EnergyTwoPhase_PK::Initialize(const Teuchos::Ptr<State>& S)
   op_preconditioner_diff_->SetBCs(op_bc_, op_bc_);
   op_preconditioner_ = op_preconditioner_diff_->global_operator();
   op_preconditioner_->Init();
-  op_preconditioner_diff_->SetScalarCoefficient(S->GetFieldData(conductivity_key_), Teuchos::null);
+
+  // optional upwinding of conductivity
+  if (tmp_list.isSublist("conductivity")) {
+    Operators::UpwindFactory<int> upw_factory;
+    upwind_ = upw_factory.Create(mesh_, tmp_list.sublist("conductivity"));
+    upw_conductivity_ = Teuchos::rcp(new CompositeVector(*upwind_->Map()));
+
+    op_matrix_diff_->SetScalarCoefficient(upw_conductivity_, Teuchos::null);
+    op_preconditioner_diff_->SetScalarCoefficient(upw_conductivity_, Teuchos::null);
+  } else {
+    op_matrix_diff_->SetScalarCoefficient(S->GetFieldData(conductivity_key_), Teuchos::null);
+    op_preconditioner_diff_->SetScalarCoefficient(S->GetFieldData(conductivity_key_), Teuchos::null);
+  }
 
   op_acc_ = Teuchos::rcp(new Operators::PDE_Accumulation(AmanziMesh::CELL, op_preconditioner_));
   op_preconditioner_advection_ = opfactory_adv.Create(oplist_adv, op_preconditioner_);

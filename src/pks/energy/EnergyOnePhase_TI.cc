@@ -11,6 +11,7 @@
 
 // Amanzi
 #include "Key.hh"
+#include "PDE_HelperDiscretization.hh"
 
 // Amanzi::Energy
 #include "FieldEvaluator.hh"
@@ -31,7 +32,18 @@ void EnergyOnePhase_PK::FunctionalResidual(
   // update BCs and conductivity
   temperature_eval_->SetFieldAsChanged(S_.ptr());
   UpdateSourceBoundaryData(t_old, t_new, *u_new->Data());
+
+  Teuchos::RCP<const CompositeVector> flux = S_->GetFieldData(darcy_flux_key_);
+
   S_->GetFieldEvaluator(conductivity_key_)->HasFieldChanged(S_.ptr(), passwd_);
+  if (upwind_.get()) {
+     const auto& conductivity = S_->GetFieldData(conductivity_key_);
+    *upw_conductivity_->ViewComponent("cell") = *conductivity->ViewComponent("cell");
+
+    const auto& bc_model = op_bc_->bc_model();
+    Operators::CellToBoundaryFaces(bc_model, *upw_conductivity_);
+    upwind_->Compute(*flux, *u_new->Data(), bc_model, *upw_conductivity_);
+  }
 
   // assemble residual for diffusion operator
   op_matrix_->Init();
@@ -62,7 +74,6 @@ void EnergyOnePhase_PK::FunctionalResidual(
   const CompositeVector& enthalpy = *S_->GetFieldData(enthalpy_key_);
   const CompositeVector& n_l = *S_->GetFieldData(mol_density_liquid_key_);
 
-  Teuchos::RCP<const CompositeVector> flux = S_->GetFieldData(darcy_flux_key_);
   op_advection_->Init();
   op_matrix_advection_->Setup(*flux);
   op_matrix_advection_->UpdateMatrices(flux.ptr());
@@ -90,7 +101,18 @@ void EnergyOnePhase_PK::UpdatePreconditioner(
 
   // update BCs and conductivity
   UpdateSourceBoundaryData(t, t + dt, *up->Data());
+
   S_->GetFieldEvaluator(conductivity_key_)->HasFieldChanged(S_.ptr(), passwd_);
+
+  if (upwind_.get()) {
+    const auto& conductivity = S_->GetFieldData(conductivity_key_);
+    *upw_conductivity_->ViewComponent("cell") = *conductivity->ViewComponent("cell");
+
+    Teuchos::RCP<const CompositeVector> flux = S_->GetFieldData(darcy_flux_key_);
+    const auto& bc_model = op_bc_->bc_model();
+    Operators::CellToBoundaryFaces(bc_model, *upw_conductivity_);
+    upwind_->Compute(*flux, *up->Data(), bc_model, *upw_conductivity_);
+  }
 
   // assemble matrices for diffusion operator
   op_preconditioner_->Init();
@@ -109,7 +131,7 @@ void EnergyOnePhase_PK::UpdatePreconditioner(
 
   // add advection term dHdT
   if (prec_include_enthalpy_) {
-    Teuchos::RCP<const CompositeVector> darcy_flux = S_->GetFieldData(darcy_flux_key_);
+    Teuchos::RCP<const CompositeVector> flux = S_->GetFieldData(darcy_flux_key_);
 
     der_name = Keys::getDerivKey(enthalpy_key_, temperature_key_);
     S_->GetFieldEvaluator(enthalpy_key_)->HasFieldDerivativeChanged(S_.ptr(), passwd_, temperature_key_);
@@ -118,12 +140,23 @@ void EnergyOnePhase_PK::UpdatePreconditioner(
     const CompositeVector& n_l = *S_->GetFieldData(mol_density_liquid_key_);
     dHdT->Multiply(1.0, *dHdT, n_l, 0.0);
 
-    op_preconditioner_advection_->Setup(*darcy_flux);
-    op_preconditioner_advection_->UpdateMatrices(darcy_flux.ptr(), dHdT.ptr());
+    if (S_->GetFieldEvaluator(mol_density_liquid_key_)->get_type() == EvaluatorType::SECONDARY) {
+      der_name = Keys::getDerivKey(mol_density_liquid_key_, temperature_key_);
+      S_->GetFieldEvaluator(mol_density_liquid_key_)->HasFieldDerivativeChanged(S_.ptr(), passwd_, temperature_key_);
+      auto dRdT = Teuchos::rcp(new CompositeVector(*S_->GetFieldData(der_name, mol_density_liquid_key_)));
+
+      const CompositeVector& H_l = *S_->GetFieldData(mol_density_liquid_key_);
+      dRdT->Multiply(1.0, *dRdT, H_l, 0.0);
+      dHdT->Update(1.0, *dRdT, 1.0);
+    }
+
+    op_preconditioner_advection_->Setup(*flux);
+    op_preconditioner_advection_->UpdateMatrices(flux.ptr(), dHdT.ptr());
     op_preconditioner_advection_->ApplyBCs(false, true, false);
   }
 
-  // finalize preconditioner
+  // verify and finalize preconditioner
+  op_preconditioner_->Verify();
   op_preconditioner_->ComputeInverse();
 }
 
@@ -137,10 +170,10 @@ double EnergyOnePhase_PK::ErrorNorm(Teuchos::RCP<const TreeVector> u,
   Teuchos::OSTab tab = vo_->getOSTab();
 
   // Relative error in cell-centered temperature
-  const Epetra_MultiVector& uc = *u->Data()->ViewComponent("cell", false);
-  const Epetra_MultiVector& duc = *du->Data()->ViewComponent("cell", false);
+  const Epetra_MultiVector& uc = *u->Data()->ViewComponent("cell");
+  const Epetra_MultiVector& duc = *du->Data()->ViewComponent("cell");
 
-  double error_t(0.0);
+  double error(0.0), error_t(0.0);
   double ref_temp(273.0);
   for (int c = 0; c < ncells_owned; c++) {
     double tmp = fabs(duc[0][c]) / (fabs(uc[0][c] - ref_temp) + ref_temp);
@@ -152,8 +185,7 @@ double EnergyOnePhase_PK::ErrorNorm(Teuchos::RCP<const TreeVector> u,
   // Cell error is based upon error in energy conservation relative to
   // a characteristic energy
   double error_e(0.0);
-
-  double error = std::max(error_t, error_e);
+  error = std::max(error_t, error_e);
 
 #ifdef HAVE_MPI
   double buf = error;

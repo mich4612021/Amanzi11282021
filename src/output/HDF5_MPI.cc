@@ -23,11 +23,12 @@
 
 namespace Amanzi {
 
-HDF5_MPI::HDF5_MPI(const Comm_ptr_type &comm)
+HDF5_MPI::HDF5_MPI(const Comm_ptr_type &comm, bool include_io_set)
     : viz_comm_(Teuchos::rcp_dynamic_cast<const MpiComm_type>(comm)),
       dynamic_mesh_(false),
       mesh_written_(false),
-      static_mesh_cycle_(0)
+      static_mesh_cycle_(0),
+      include_io_set_(include_io_set)
 {
   AMANZI_ASSERT(viz_comm_.get());
   info_ = MPI_INFO_NULL;
@@ -41,12 +42,13 @@ HDF5_MPI::HDF5_MPI(const Comm_ptr_type &comm)
 }
 
 
-HDF5_MPI::HDF5_MPI(const Comm_ptr_type &comm, std::string dataFilename)
+HDF5_MPI::HDF5_MPI(const Comm_ptr_type &comm, std::string dataFilename, bool include_io_set)
     : viz_comm_(Teuchos::rcp_dynamic_cast<const MpiComm_type>(comm)),
       H5DataFilename_(dataFilename),
       dynamic_mesh_(false),
       mesh_written_(false),
-      static_mesh_cycle_(0)
+      static_mesh_cycle_(0),
+      include_io_set_(include_io_set)
 {
   AMANZI_ASSERT(viz_comm_.get());
   H5DataFilename_ = dataFilename;
@@ -663,33 +665,46 @@ void HDF5_MPI::createDataFile(const std::string& base_filename)
 }
 
 
-void HDF5_MPI::open_h5file()
+void HDF5_MPI::open_h5file(bool read_only)
 {
-  data_file_ = parallelIO_open_file(H5DataFilename_.c_str(), &IOgroup_,
-                                    FILE_READWRITE);
-  if (data_file_ < 0) {
-    Errors::Message message("HDF5_MPI::writeFieldData_ - error opening data file to write field data");
-    Exceptions::amanzi_throw(message);
+  if (read_only) {
+    data_file_ = parallelIO_open_file(H5DataFilename_.c_str(), &IOgroup_,
+             FILE_READWRITE);
+    if (data_file_ < 0) {
+      Errors::Message msg;
+      msg << "HDF5_MPI: error opening file \"" << H5DataFilename_ << "\" with READ_WRITE access.";
+      Exceptions::amanzi_throw(msg);
+    }
+  } else {
+    data_file_ = parallelIO_open_file(H5DataFilename_.c_str(), &IOgroup_,
+             FILE_READWRITE);
+    if (data_file_ < 0) {
+      Errors::Message msg;
+      msg << "HDF5_MPI: error opening file \"" << H5DataFilename_ << "\" with READ_ONLY access.";
+      Exceptions::amanzi_throw(msg);
+    }
   }
 }
 
 
 void HDF5_MPI::close_h5file() {
-  parallelIO_close_file(data_file_, &IOgroup_); 
+  parallelIO_close_file(data_file_, &IOgroup_);
+  data_file_ = -1;
 }
 
 
-void HDF5_MPI::createTimestep(const double time, const int iteration)
+void HDF5_MPI::createTimestep(double time, int iteration, const std::string& tag)
 {
   setIteration(iteration);
   setTime(time);
+  set_tag(tag);
 
   if (TrackXdmf() && viz_comm_->MyPID() == 0) {
     // create single step xdmf file
     Teuchos::XMLObject tmp("Xdmf");
     tmp.addChild(addXdmfHeaderLocal_("Mesh",time,iteration));
     std::stringstream filename;
-    filename << H5DataFilename() << "." << iteration << ".xmf";
+    filename << H5DataFilename() << "." << iteration << tag << ".xmf";
     of_timestep_.open(filename.str().c_str());
     // channel will be closed when the endTimestep() is called
     setxdmfStepFilename(filename.str());
@@ -710,7 +725,7 @@ void HDF5_MPI::endTimestep()
     // channel if they differ
     auto fields = extractFields_(xmlStep_);
     auto fields_prev = extractFields_(xmlStep_prev_);
-    if (fields != fields_prev && fields_prev.size() != 0) {
+    if (fields != fields_prev && !xmlStep_prev_.isEmpty()) {
       createXdmfVisit_();
     }
 
@@ -718,14 +733,19 @@ void HDF5_MPI::endTimestep()
 
     // add a new time step to global VisIt xdmf files
     // TODO(barker): how to get to grid collection node, rather than root???
-    std::string record = H5DataFilename() + "." + std::to_string(Iteration()) + ".xmf";
+    std::string record = H5DataFilename() + "." + std::to_string(Iteration()) + tag_ + ".xmf";
     writeXdmfVisitGrid_(record);
     // TODO(barker): where to write out depends on where the root node is
     // ?? how to terminate stream or switch to new file out??
     int count(0);
-    std::ofstream of;
     for (auto& xmf : xmlVisit_) {
-      std::string full_name = xdmfVisitBaseFilename_ + "_io-set" + std::to_string(count++) + ".Visit.xmf";
+      std::string full_name;
+      if (include_io_set_) {
+        full_name = xdmfVisitBaseFilename_ + "_io-set" + std::to_string(count++) + ".VisIt.xmf";
+      } else {
+        full_name = xdmfVisitBaseFilename_ + ".VisIt.xmf";
+      }
+      std::ofstream of;
       of.open(full_name.c_str());
       of << xmf;
       of.close();
@@ -1135,7 +1155,7 @@ void HDF5_MPI::writeFieldData_(const Epetra_Vector &x, const std::string& varnam
   //MB: }
 
   if (TrackXdmf()) {
-    h5path << "/" << Iteration();
+    h5path << "/" << Iteration() << get_tag();
   }
 
   char *tmp;
@@ -1198,7 +1218,7 @@ bool HDF5_MPI::checkFieldData_(const std::string& varname)
     exists = parallelIO_name_exists(currfile->fid, h5path);
 
     if (!exists) {
-      std::cout<< "Field "<<h5path<<" is not found in hdf5 file.\n";
+      std::cout << "Field " << h5path << " is not found in hdf5 file.\n";
     }
 
     MPI_Bcast(&exists, 1, MPI_C_BOOL, 0, viz_comm_->Comm()); 
@@ -1213,10 +1233,10 @@ bool HDF5_MPI::checkFieldData_(const std::string& varname)
 bool HDF5_MPI::readFieldData_(Epetra_Vector &x, const std::string& varname,
                               datatype_t type)
 {
+  if (!checkFieldData_(varname)) return false;
+
   char *h5path = new char[varname.size() + 1];
   strcpy(h5path, varname.c_str());
-
-  if (!checkFieldData_(varname)) return false;
 
   int ndims;
   parallelIO_get_dataset_ndims(&ndims, data_file_, h5path, &IOgroup_);
@@ -1364,8 +1384,13 @@ void HDF5_MPI::createXdmfVisit_()
   xmf.addChild(addXdmfHeaderGlobal_());
 
   // write xmf
-  int count = xmlVisit_.size();
-  std::string full_name = xdmfVisitBaseFilename_ + "_io-set" + std::to_string(count) + ".Visit.xmf";
+  std::string full_name;
+  if (include_io_set_) {
+    int count = xmlVisit_.size();
+    full_name = xdmfVisitBaseFilename_ + "_io-set" + std::to_string(count++) + ".VisIt.xmf";
+  } else {
+    full_name = xdmfVisitBaseFilename_ + ".VisIt.xmf";
+  }
   std::ofstream of(full_name.c_str());
   of << HDF5_MPI::xdmfHeader_ << xmf << std::endl;
   of.close();

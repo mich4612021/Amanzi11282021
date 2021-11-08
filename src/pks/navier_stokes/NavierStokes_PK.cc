@@ -227,7 +227,7 @@ void NavierStokes_PK::Initialize(const Teuchos::Ptr<State>& S)
 
   // -- velocity
   if (bc_list->isSublist("velocity")) {
-    PK_DomainFunctionFactory<NavierStokesBoundaryFunction> bc_factory(mesh_);
+    PK_DomainFunctionFactory<NavierStokesBoundaryFunction> bc_factory(mesh_, S_);
 
     Teuchos::ParameterList& tmp_list = bc_list->sublist("velocity");
     for (auto it = tmp_list.begin(); it != tmp_list.end(); ++it) {
@@ -283,6 +283,7 @@ void NavierStokes_PK::Initialize(const Teuchos::Ptr<State>& S)
 
   // -- iniailize boundary conditions (memory allocation)
   UpdateSourceBoundaryData_(t_ini, t_ini);
+  op_matrix_elas_->EnforceBCs(*soln_u_);
 
   // -- assemble phase
   op_matrix_elas_->UpdateMatrices();

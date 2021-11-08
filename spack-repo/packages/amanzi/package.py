@@ -42,8 +42,8 @@ class Amanzi(CMakePackage):
     variant('ATSPhysics', default=False, description='Enable Amanzi Physics support')
     variant('crunchtope', default=False, description='Enable CrunchTope support')
 
-#   variant('mstk', default=True, description='Enable MSTK mesh support for '
-#     'unstructured mesh') 
+    variant('mstk', default=True, description='Enable MSTK mesh support for '
+      'unstructured mesh') 
 #    variant('moab', default=False, description='Enable MOAB mesh support for '
 #            'unstructured mesh')
 #    variant('silo', default=False, description='Enable Silo reader for binary '
@@ -51,7 +51,8 @@ class Amanzi(CMakePackage):
     #variant('petsc', default=True, description='Enable PETsC support')
 #    variant('tests', default=False, description='Enable the unit test suite')
 
-    patch('exprtk.patch', when = '@1.0.0')
+    patch('exprtk.patch', when='@master')
+    patch('exprtk.patch', when='@1.0.0:')
 
     #depends_on('moab', when='+moab')
     #depends_on('silo', when='+silo')
@@ -70,15 +71,15 @@ class Amanzi(CMakePackage):
     depends_on('seacas')
     depends_on('boost@1.59.0: cxxstd=11 +program_options')
     depends_on('xerces-c')
-    depends_on('cgns@develop +mpi +parallel')
+    depends_on('cgns@develop +mpi')
     depends_on('ascemio')
-    depends_on('netcdf-c@4.7.3 +parallel-netcdf')
+    depends_on('netcdf-c +parallel-netcdf')
     depends_on('unittest-cpp')
     # Alquimia
-    depends_on('petsc@3.10.2')
+    depends_on('petsc@3.10.2', when="+alquimia")
     depends_on('hdf5@1.10.6 +mpi+fortran+hl', when='+alquimia')
     depends_on('alquimia@xsdk-0.4.0', when='+alquimia')
-    depends_on('pflotran@xsdk-0.4.0')
+    depends_on('pflotran@xsdk-0.4.0', when='+alquimia')
     # Hypre
     depends_on('superlu', when='+hypre')
     depends_on('superlu-dist@5.4.0', when='+hypre')
@@ -91,8 +92,8 @@ class Amanzi(CMakePackage):
     #depends_on('trilinos@12.14.1 +pnetcdf +boost +cgns +hdf5 +metis '
     #           '+zlib +anasazi +amesos2 +epetra +ml +teuchos +superlu-dist '
     #           '+zoltan +nox +ifpack +muelu')
-    depends_on('trilinos@12.18.1 +pnetcdf +boost +cgns +hdf5 +metis '
-               '+zlib +anasazi +amesos2 +epetra +ml +teuchos '
+    depends_on('trilinos@13.0.0 +boost +hdf5 '
+               '+anasazi +amesos2 +epetra +ml '
                '+zoltan +nox +ifpack +muelu')
 
     # Conflicts 
@@ -151,6 +152,7 @@ class Amanzi(CMakePackage):
         if '+mstk' in self.spec:
             options.append('-DMSTK_VERSION=3.3.5')
             options.append('-DENABLE_MSTK_Mesh=ON')
+            options.append('-DENABLE_MESH_MSTK:BOOL=ON')
         else:
             options.append('-DENABLE_MSTK_Mesh=OFF')
 

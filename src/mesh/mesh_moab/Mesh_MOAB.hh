@@ -40,6 +40,7 @@ namespace AmanziMesh {
 
 class Mesh_MOAB : public Mesh {
  public:
+
   // the request_faces and request_edges arguments have to be at the
   // end and not in the middle because if we omit them and specify a
   // pointer argument like gm or verbosity_obj, then there is implicit
@@ -143,13 +144,6 @@ class Mesh_MOAB : public Mesh {
                       const Parallel_type ptype,
                       Entity_ID_List *faceids) const;
     
-  // Get faces of ptype of a particular cell that are connected to the
-  // given node
-  void node_get_cell_faces(const Entity_ID nodeid, 
-                           const Entity_ID cellid,
-                           const Parallel_type ptype,
-                           Entity_ID_List *faceids) const;    
-    
   // Cells of type 'ptype' connected to an edge
   void edge_get_cells(const Entity_ID edgeid, 
                       const Parallel_type ptype,
@@ -173,18 +167,9 @@ class Mesh_MOAB : public Mesh {
                                const Parallel_type ptype,
                                Entity_ID_List *fadj_cellids) const;
 
-  // Node connected neighboring cells of given cell
-  // (a hex in a structured mesh has 26 node connected neighbors)
-  // The cells are returned in no particular order
-  void cell_get_node_adj_cells(const Entity_ID cellid,
-                               const Parallel_type ptype,
-                               Entity_ID_List *nadj_cellids) const;
-
-    
-  //
+  //---------------------
   // Mesh entity geometry
   //---------------------
-  //
     
   // Node coordinates - 3 in 3D and 2 in 2D
   void node_get_coordinates(const Entity_ID nodeid, 
@@ -233,9 +218,24 @@ class Mesh_MOAB : public Mesh {
   //
   // Boundary Conditions or Sets
   //----------------------------
-    
+  virtual
+  bool valid_set_type(const AmanziGeometry::RegionType rtype, const Entity_kind kind) const {
+    if (rtype == AmanziGeometry::RegionType::BOX ||
+        rtype == AmanziGeometry::RegionType::PLANE ||
+        rtype == AmanziGeometry::RegionType::POINT ||
+        rtype == AmanziGeometry::RegionType::POLYGON ||
+        rtype == AmanziGeometry::RegionType::LABELEDSET ||
+        rtype == AmanziGeometry::RegionType::COLORFUNCTION) {
+      // while some LOGICAL operations are implemented, not all are...
+      //rtype == AmanziGeometry::RegionType::LOGICAL) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   // Get list of entities of type 'category' in set
-  void get_set_entities_and_vofs(const std::string setname, 
+  void get_set_entities_and_vofs(const std::string& setname, 
                                  const Entity_kind kind, 
                                  const Parallel_type ptype, 
                                  std::vector<Entity_ID> *entids,
@@ -261,7 +261,8 @@ class Mesh_MOAB : public Mesh {
   void ErrorCheck_(int result, std::string msg) const {
     if (result != moab::MB_SUCCESS) {
       std::cerr << msg << std::endl;
-      assert(false);
+      Errors::Message err(msg);
+      Exceptions::amanzi_throw(err);
      }
    }
 
@@ -391,15 +392,6 @@ class Mesh_MOAB : public Mesh {
                                 Entity_ID_List *edgeids) const 
   { 
     Errors::Message mesg("Edges not implemented in this framework. Use MSTK");
-    Exceptions::amanzi_throw(mesg);
-  }
-
-  // Edges and edge directions of a 2D cell
-  void cell_2D_get_edges_and_dirs_internal_(const Entity_ID cellid,
-                                            Entity_ID_List *edgeids,
-                                            std::vector<int> *edgedirs) const 
-  { 
-    Errors::Message mesg("Edges not implemented in this interface. Use MSTK");
     Exceptions::amanzi_throw(mesg);
   }
 

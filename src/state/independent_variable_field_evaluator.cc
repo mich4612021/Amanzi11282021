@@ -25,6 +25,7 @@ IndependentVariableFieldEvaluator::IndependentVariableFieldEvaluator(Teuchos::Pa
     temporally_variable_(true),
     computed_once_(false) {
 
+  type_ = EvaluatorType::INDEPENDENT;
   my_key_ = plist_.get<std::string>("evaluator name");
   temporally_variable_ = !plist_.get<bool>("constant in time", false);
 }
@@ -55,6 +56,9 @@ void IndependentVariableFieldEvaluator::operator=(const FieldEvaluator& other) {
 #endif
   AMANZI_ASSERT(my_key_ == other_p->my_key_);
 
+  time_ = other_p->time_;
+  computed_once_ = other_p->computed_once_;
+  temporally_variable_ = other_p->temporally_variable_;
   requests_ = other_p->requests_;
 }
 
@@ -64,13 +68,16 @@ void IndependentVariableFieldEvaluator::operator=(const FieldEvaluator& other) {
 // ---------------------------------------------------------------------------
 void IndependentVariableFieldEvaluator::EnsureCompatibility(const Teuchos::Ptr<State>& S) {
   // Require the field and claim ownership.
-  S->RequireField(my_key_, my_key_);
+  const auto& fac = S->RequireField(my_key_, my_key_);
+
+  // set not owned -- this allows subsequent calls to add to my components
+  fac->SetOwned(false);
+
   // check plist for vis or checkpointing control
   bool io_my_key = plist_.get<bool>("visualize", true);
   S->GetField(my_key_, my_key_)->set_io_vis(io_my_key);
   bool checkpoint_my_key = plist_.get<bool>("checkpoint", false);
   S->GetField(my_key_, my_key_)->set_io_checkpoint(checkpoint_my_key);
-  
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +94,7 @@ bool IndependentVariableFieldEvaluator::HasFieldChanged(const Teuchos::Ptr<State
     }
 
     // field DOES have to be computed at least once, even if it never changes.
+    time_ = S->time();
     UpdateField_(S);
     computed_once_ = true;
     requests_.insert(request);
@@ -99,6 +107,7 @@ bool IndependentVariableFieldEvaluator::HasFieldChanged(const Teuchos::Ptr<State
                  << time_ << " requested by " << request 
                  << " is updating at time = " << S->time() << std::endl;
     }
+    time_ = S->time();
     UpdateField_(S);
     requests_.clear();
     requests_.insert(request);

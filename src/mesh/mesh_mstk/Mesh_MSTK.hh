@@ -43,8 +43,10 @@ namespace AmanziMesh {
 
 class Mesh_MSTK : public Mesh {
  public:
+
+  // copy construction not supported
   Mesh_MSTK(const Mesh_MSTK& other) = delete;
-  
+
   // Constructors that read the mesh from a file
   // The request_faces and request_edges arguments have to be at the
   // end and not in the middle because if we omit them and specify a
@@ -111,11 +113,10 @@ class Mesh_MSTK : public Mesh {
   // Parent entity in the source mesh if mesh was derived from another mesh
   Entity_ID entity_get_parent(const Entity_kind kind, const Entity_ID entid) const;
 
-  virtual
-  Teuchos::RCP<const Mesh> parent() const { return parent_mesh_; }
+  virtual Teuchos::RCP<const Mesh> parent() const { return parent_mesh_; }
 
 
-  //
+  // -------------------------
   // General mesh information
   // -------------------------
     
@@ -179,14 +180,12 @@ class Mesh_MSTK : public Mesh {
   void node_get_faces(const Entity_ID nodeid, 
 		      const Parallel_type ptype,
 		      Entity_ID_List *faceids) const;
-    
-  // Get faces of ptype of a particular cell that are connected to the
-  // given node
-  void node_get_cell_faces(const Entity_ID nodeid, 
-			   const Entity_ID cellid,
-			   const Parallel_type ptype,
-			   Entity_ID_List *faceids) const;    
-    
+
+  // Edges of type 'ptype' connected to a node
+  void node_get_edges(const Entity_ID nodeid,
+                      const Parallel_type ptype,
+                      Entity_ID_List *edgeids) const;
+
   // Faces of type 'ptype' connected to an edge
   void edge_get_faces(const Entity_ID edgeid,
                       const Parallel_type ptype,
@@ -273,12 +272,16 @@ class Mesh_MSTK : public Mesh {
   //
   // Boundary Conditions or Sets
   //----------------------------
-    
+  virtual
+  bool valid_set_type(const AmanziGeometry::RegionType rtype, const Entity_kind kind) const {
+    return true; // MSTK supports all region types
+  }
+
   // Get list of entities of type 'category' in set
   using Mesh::get_set_entities;
 
   virtual
-  void get_set_entities_and_vofs(const std::string setname, 
+  void get_set_entities_and_vofs(const std::string& setname, 
                                  const Entity_kind kind, 
                                  const Parallel_type ptype, 
                                  std::vector<Entity_ID> *entids,
@@ -540,11 +543,6 @@ class Mesh_MSTK : public Mesh {
   // Get edges of a cell
   void cell_get_edges_internal_(const Entity_ID cellid,
 				Entity_ID_List *edgeids) const;
-
-  // Get edges and directions of a 2D cell
-  void cell_2D_get_edges_and_dirs_internal_(const Entity_ID cellid,
-                                            Entity_ID_List *edgeids,
-                                            std::vector<int> *edgedirs) const;
 
   // Edges and edge directions of a face
   void face_get_edges_and_dirs_internal_(const Entity_ID cellid,

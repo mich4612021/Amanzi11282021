@@ -43,7 +43,7 @@ void dam_break_1D_exact(double hL, double x0, double t, double x, double &h, dou
     }
     else {
       h = 0.;
-        u = 0.;
+      u = 0.;
     }
   }
 
@@ -119,13 +119,12 @@ TEST(SHALLOW_WATER_1D_CONVERGENCE) {
 
   RCP<const Mesh> mesh;
   mesh = meshfactory.create(0.0, 0.0, 10.0, 1.0, 100, 1, request_faces, request_edges);
-//  mesh = meshfactory.create("test/median63x64.exo",request_faces,request_edges); // works only with first order, no reconstruction
+  // mesh = meshfactory.create("test/median63x64.exo",request_faces,request_edges); // works only with first order, no reconstruction
   if (MyPID == 0) std::cout << "Mesh created." << std::endl;
 
   // create a state
   RCP<State> S = rcp(new State());
-  //S->RegisterDomainMesh(rcp_const_cast<Mesh>(mesh));
-  S->RegisterMesh("surface",rcp_const_cast<Mesh>(mesh));
+  S->RegisterMesh("surface", rcp_const_cast<Mesh>(mesh));
   S->set_time(0.0);
   if (MyPID == 0) std::cout << "State created." << std::endl;
   

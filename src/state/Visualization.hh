@@ -28,12 +28,11 @@ DOMAIN-NAME`".
     * `"file name base`" ``[string]`` **visdump_DOMAIN_data**
     * `"dynamic mesh`" ``[bool]`` **false** Write mesh data for every
       visualization dump; this facilitates visualizing deforming meshes.
-    * `"time units`" ``[string]`` **s** A valid time unit to convert time
+    * `"time unit`" ``[string]`` **s** A valid time unit to convert time
       into for output files.  One of `"s`", `"d`", `"y`", or `"yr 365`"
 
     INCLUDES:
-
-    * ``[io-event-spec]`` An IOEvent_ spec
+    - ``[io-event-spec]`` An IOEvent_ spec
 
 
 Example:
@@ -42,7 +41,7 @@ Example:
 
   <ParameterList name="visualization">
     <Parameter name="file name base" type="string" value="visdump_data"/>
-  
+
     <Parameter name="cycles start period stop" type="Array(int)" value="{{0, 100, -1}}" />
     <Parameter name="cycles" type="Array(int)" value="{{999, 1001}}" />
 
@@ -83,25 +82,32 @@ class Visualization : public IOEvent {
     mesh_ = mesh;
   }
 
-  std::string name() const { return name_; }
-  void set_name(const std::string& name) { name_ = name; }
+  std::string get_name() const { return name_; }
+  void set_name(const std::string& name);
+  void AddDomain(const std::string& name);
+  bool WritesDomain(const std::string& name) const;
+
+  std::string get_tag() const { return tag_; }
+  void set_tag(const std::string& tag) { tag_ = tag; }
 
   // public interface for coordinator clients
-  void CreateFiles();
-  void CreateTimestep(double time, int cycle);
-  void FinalizeTimestep() const;
+  void CreateFiles(bool include_io_set=true);
+  void CreateTimestep(double time, int cycle, const std::string& tag);
+  virtual void FinalizeTimestep() const;
 
   // public interface for data clients
-  void WriteVector(const Epetra_MultiVector& vec, const std::vector<std::string>& names ) const;
-  void WriteVector(const Epetra_Vector& vec, const std::string& name ) const;
-  void WriteRegions();
-  void WritePartition();
+  virtual void WriteVector(const Epetra_MultiVector& vec, const std::vector<std::string>& names ) const;
+  virtual void WriteVector(const Epetra_Vector& vec, const std::string& name ) const;
+  virtual void WriteRegions();
+  virtual void WritePartition();
 
  protected:
-  void ReadParameters_();
+  virtual void ReadParameters_();
 
+  std::vector<std::string> domains_;
   std::string my_units_;
-  std::string name_;
+  std::string name_, tag_;
+  bool time_unit_written_;
 
   Teuchos::RCP<const AmanziMesh::Mesh> mesh_;
   Teuchos::RCP<Output> visualization_output_;

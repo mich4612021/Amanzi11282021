@@ -26,6 +26,7 @@ include_directories(${DBC_SOURCE_DIR})
 include_directories(${DBG_SOURCE_DIR})
 include_directories(${GEOMETRY_SOURCE_DIR})
 include_directories(${MESH_SOURCE_DIR})
+include_directories(${MESH_MSTK_SOURCE_DIR})
 include_directories(${OUTPUT_SOURCE_DIR})
 include_directories(${FUNCS_SOURCE_DIR})
 include_directories(${MFUNCS_SOURCE_DIR})
@@ -61,6 +62,7 @@ set(state_inc_files
   independent_variable_field_evaluator.hh
   independent_variable_field_evaluator_fromfunction.hh
   independent_variable_field_evaluator_fromfile.hh
+  independent_variable_field_evaluator_constant.hh
   secondary_variable_field_evaluator_fromfunction.hh
   constant_variable_field_evaluator.hh
   deforming_cell_volume_evaluator.hh
@@ -79,6 +81,7 @@ set(state_inc_files
   StateDefs.hh
   State.hh
   Visualization.hh
+  VisualizationDomainSet.hh
   UnstructuredObservations.hh
   Debugger.hh)
 
@@ -89,11 +92,11 @@ add_amanzi_library(state
                           chemistry_data.cc
                           cell_volume_evaluator.cc
                           Field.cc
-	                      Field_CompositeVector.cc
-	                      Field_ConstantVector.cc
-			              Field_Scalar.cc
-			              FieldEvaluator.cc
-	                      FieldEvaluator_Factory.cc
+                          Field_CompositeVector.cc
+                          Field_ConstantVector.cc
+                          Field_Scalar.cc
+			  FieldEvaluator.cc
+	                  FieldEvaluator_Factory.cc
                           rank_evaluator.cc
                           primary_variable_field_evaluator.cc
                           secondary_variable_field_evaluator.cc
@@ -102,10 +105,12 @@ add_amanzi_library(state
                           independent_variable_field_evaluator.cc
                           independent_variable_field_evaluator_fromfunction.cc
                           independent_variable_field_evaluator_fromfile.cc
+                          independent_variable_field_evaluator_constant.cc
                           constant_variable_field_evaluator.cc
                           deforming_cell_volume_evaluator.cc
                           UnstructuredObservations.cc
                           Visualization.cc
+                          VisualizationDomainSet.cc
                           Debugger.cc
                    HEADERS ${state_inc_files}
 		   LINK_LIBS data_structures functions mesh_functions output mesh atk
@@ -127,11 +132,11 @@ register_evaluator_with_factory(HEADERFILE primary_variable_field_evaluator_reg.
 register_evaluator_with_factory(HEADERFILE independent_variable_field_evaluator_fromfunction_reg.hh LISTNAME REGISTER_AMANZI_STATE_EVALUATORS)
 register_evaluator_with_factory(HEADERFILE secondary_variable_field_evaluator_fromfunction_reg.hh LISTNAME REGISTER_AMANZI_STATE_EVALUATORS)
 register_evaluator_with_factory(HEADERFILE independent_variable_field_evaluator_fromfile_reg.hh LISTNAME REGISTER_AMANZI_STATE_EVALUATORS)
+register_evaluator_with_factory(HEADERFILE independent_variable_field_evaluator_constant_reg.hh LISTNAME REGISTER_AMANZI_STATE_EVALUATORS)
 register_evaluator_with_factory(HEADERFILE constant_variable_field_evaluator_reg.hh LISTNAME REGISTER_AMANZI_STATE_EVALUATORS)
 register_evaluator_with_factory(HEADERFILE deforming_cell_volume_evaluator_reg.hh LISTNAME REGISTER_AMANZI_STATE_EVALUATORS)
 
 generate_evaluators_registration_header(HEADERFILE state_evaluators_registration.hh LISTNAME REGISTER_AMANZI_STATE_EVALUATORS  INSTALL True)
-
 
 if (BUILD_TESTS)
     # Add UnitTest includes
@@ -146,7 +151,8 @@ if (BUILD_TESTS)
     # Copy test subdirectory for out of source builds
     if (NOT ("${STATE_SOURCE_DIR}" STREQUAL "${STATE_BINARY_DIR}"))
       file(GLOB DataFiles "${STATE_SOURCE_DIR}/test/*.xml"
-                          "${STATE_SOURCE_DIR}/test/*.exo")
+                          "${STATE_SOURCE_DIR}/test/*.exo"
+                          "${STATE_SOURCE_DIR}/test/*.gold")
       file(COPY ${DataFiles} DESTINATION ${STATE_BINARY_DIR}/test/)
     endif()
     
@@ -159,6 +165,15 @@ if (BUILD_TESTS)
                     LINK_LIBS state mesh_factory mesh data_structures mesh_functions functions 
                               ${UnitTest_LIBRARIES} ${NOX_LIBRARIES} ${HDF5_LIBRARIES})
 
+    add_amanzi_test(state_restart2 state_restart2
+                    KIND int
+                    SOURCE
+	  	          test/Main.cc
+	 		  test/state_restart2.cc
+                    NPROCS 2
+                    LINK_LIBS state mesh_factory mesh data_structures mesh_functions functions 
+                              ${UnitTest_LIBRARIES} ${NOX_LIBRARIES} ${HDF5_LIBRARIES})
+                            
     add_amanzi_test(state_copy state_copy
                     KIND int
                     SOURCE test/Main.cc test/state_copy.cc
@@ -178,13 +193,20 @@ if (BUILD_TESTS)
                     LINK_LIBS state mesh_factory mesh data_structures mesh_functions functions 
                               ${UnitTest_LIBRARIES} ${HDF5_LIBRARIES})
 
-
     add_amanzi_test(state_init state_init
                     KIND int
                     SOURCE test/Main.cc
 	 		   test/state_init.cc
                     LINK_LIBS state mesh_factory mesh data_structures mesh_functions functions 
                               ${UnitTest_LIBRARIES} ${NOX_LIBRARIES} ${HDF5_LIBRARIES})
+
+    add_amanzi_test(state_observations state_observations
+                    KIND int
+                    SOURCE test/Main.cc
+	 		   test/state_observations.cc
+                    LINK_LIBS state mesh_factory mesh data_structures mesh_functions functions 
+                              ${UnitTest_LIBRARIES} ${NOX_LIBRARIES} ${HDF5_LIBRARIES})
+    add_amanzi_test(state_observations_np2 state_observations NPROCS 2 KIND unit)
 
 endif()
 

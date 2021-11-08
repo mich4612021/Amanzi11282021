@@ -16,7 +16,7 @@
 #include <string>
 #include <fstream>
 
-//#ifdef HAVE_MOAB_MESH
+//#ifdef HAVE_MESH_MOAB
 //#include "Mesh_moab.hh"
 //#endif
 
@@ -39,8 +39,8 @@ namespace Amanzi {
 
 class HDF5_MPI {
  public:
-  HDF5_MPI(const Comm_ptr_type &comm);
-  HDF5_MPI(const Comm_ptr_type &comm, std::string dataFilename);
+  HDF5_MPI(const Comm_ptr_type &comm, bool include_io_set=true);
+  HDF5_MPI(const Comm_ptr_type &comm, std::string dataFilename, bool include_io_set=true);
   ~HDF5_MPI(void);
   
   bool TrackXdmf() { return TrackXdmf_; }
@@ -66,7 +66,11 @@ class HDF5_MPI {
   double Time() { return Time_;}
   void setTime(double Time) { Time_ = Time; }
   void setDynMesh(const bool dynamic_mesh) { dynamic_mesh_ = dynamic_mesh; }
+  std::string get_tag() { return tag_; }
+  void set_tag(const std::string& tag) { tag_ = tag; }
 
+  Comm_ptr_type Comm() const { return viz_comm_; }
+  
   Teuchos::XMLObject xmlMeshVisit() { return xmlMeshVisit_; }
 
   // Output mesh data to filename.h5 and filename.xmf
@@ -79,12 +83,12 @@ class HDF5_MPI {
   // Adds time step attributes to VisIt Xdmf files.  Creates
   // individual Xdmf for the current step.
   // TODO(barker): Consolidate into a singel Xdmf file, after VisIt updates.
-  void createTimestep(const double time, const int iteration);
+  void createTimestep(double time, int iteration, const std::string& tag);
   void endTimestep();
   
   // before writing data to the h5 file, the user must open the
   // file, and after writing is done, he must close it
-  void open_h5file();
+  void open_h5file(bool read_only=false);
   void close_h5file();
 
 
@@ -187,6 +191,7 @@ class HDF5_MPI {
   int ConnLength_;
   int Iteration_;
   double Time_;
+  std::string tag_;
 
   // Mesh information
   std::string cname_;
@@ -199,6 +204,7 @@ class HDF5_MPI {
 
   bool dynamic_mesh_, mesh_written_;
   int static_mesh_cycle_;
+  bool include_io_set_;
 };
   
 } // close namespace HDF5

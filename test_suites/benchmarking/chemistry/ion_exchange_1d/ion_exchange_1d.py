@@ -101,10 +101,10 @@ if __name__ == "__main__":
 
     # hardwired for 1d-exchange:  last time = '71'
     times = ['71']
-    amanzi_components = ['total_component_concentration.cell.Na+ conc', \
-                         'total_component_concentration.cell.Ca++ conc', \
-                         'total_component_concentration.cell.Mg++ conc', \
-                         'total_component_concentration.cell.Cl- conc']
+    amanzi_components = ['total_component_concentration.cell.Na+', \
+                         'total_component_concentration.cell.Ca++', \
+                         'total_component_concentration.cell.Mg++', \
+                         'total_component_concentration.cell.Cl-']
     amanzi_sorbed     = ['total_sorbed.cell.0', \
                          'total_sorbed.cell.1', \
                          'total_sorbed.cell.2', \
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     try:   
         input_file = os.path.join("amanzi-u-1d-"+root+".xml")
         path_to_amanzi = "output-u"
-        run_amanzi_standard.run_amanzi(input_file, 1, [root+".bgd",input_file], path_to_amanzi)
+        run_amanzi_standard.run_amanzi(input_file, 1, [input_file], path_to_amanzi)
 
         u_amanzi_native = [[[] for x in range(len(amanzi_components))] for x in range(len(times))]
         for i, time in enumerate(times):
@@ -166,6 +166,30 @@ if __name__ == "__main__":
     except: 
         alq = False
 
+
+    # AmanziU + Alquimia + PFloTran chemistry with writer
+    try:
+        input_file = os.path.join("amanzi-u-1d-"+root+"-alq-pflo-writer.xml")
+        path_to_amanzi = "output-u-alq-pflo-writer"
+        run_amanzi_standard.run_amanzi(input_file, 1, ["1d-"+root+"-trim.in",root+".dat",input_file], path_to_amanzi)
+
+        u_amanzi_alquimia_w = [[[] for x in range(len(amanzi_components))] for x in range(len(times))]
+        for i, time in enumerate(times):
+            for j, comp in enumerate(amanzi_components):
+                x_amanzi_alquimia_w, c_amanzi_alquimia_w = GetXY_AmanziU_1D(path_to_amanzi,root,comp,1)
+                u_amanzi_alquimia_w[i][j] = c_amanzi_alquimia_w
+              
+        v_amanzi_alquimia_w = [[[] for x in range(len(amanzi_sorbed))] for x in range(len(times))]
+        for i, time in enumerate(times):
+            for j, comp in enumerate(amanzi_sorbed):
+                x_amanzi_alquimia_w, c_amanzi_alquimia_w = GetXY_AmanziU_1D(path_to_amanzi,root,comp,1)
+                v_amanzi_alquimia_w[i][j] = c_amanzi_alquimia_w
+
+        alq_writer = True
+
+    except: 
+        alq_writer = False
+        
 
     # AmanziU + Alquimia + CrunchFlow chemistry
     try:
@@ -272,6 +296,13 @@ if __name__ == "__main__":
             ax[j].plot(x_amanzi_alquimia, u_amanzi_alquimia[i][j],'r-',label='AmanziU+Alq(PFT)',linewidth=LINE_WIDTH)
             bx[j].plot(x_amanzi_alquimia, v_amanzi_alquimia[i][j],'r-',label='AmanziU+Alq(PFT)',linewidth=LINE_WIDTH)
 
+    if alq_writer:
+        i = 0  # hardwired for time '71'
+        for j, comp in enumerate(components):
+            ax[j].plot(x_amanzi_alquimia_w, u_amanzi_alquimia_w[i][j],'r--',label='AmanziU+Alq(PFT)-W',linewidth=LINE_WIDTH)
+            bx[j].plot(x_amanzi_alquimia_w, v_amanzi_alquimia_w[i][j],'r--',label='AmanziU+Alq(PFT)-W',linewidth=LINE_WIDTH)
+
+            
     if alq_crunch:
         i = 0  # hardwired for time '71'
         for j, comp in enumerate(components):
@@ -281,7 +312,7 @@ if __name__ == "__main__":
     if native:
         i = 0  # hardwired for time '71'
         for j, comp in enumerate(components):
-            ax[j].plot(x_amanzi_native, u_amanzi_native[i][j],'rx',c=PFLOTRAN_LINE_COLOR)
+            ax[j].plot(x_amanzi_native, u_amanzi_native[i][j],'rx',label='AmanziU Native Chem',c=PFLOTRAN_LINE_COLOR)
             bx[j].plot(x_amanzi_native, v_amanzi_native[i][j],'rx',label='AmanziU Native Chem')
 
     if crunch:
@@ -366,7 +397,7 @@ if __name__ == "__main__":
 
     plt.subplots_adjust(left=0.10,bottom=0.15,right=0.90,top=0.95)
 
-    # pyplot.show()
+    # plt.show()
     plt.savefig(root+"_1d.png",format="png")
     # plt.close()
 

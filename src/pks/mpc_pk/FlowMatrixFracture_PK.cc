@@ -34,8 +34,6 @@ FlowMatrixFracture_PK::FlowMatrixFracture_PK(Teuchos::ParameterList& pk_tree,
     Amanzi::PK_MPC<PK_BDF>(pk_tree, glist, S, soln),
     Amanzi::PK_MPCStrong<PK_BDF>(pk_tree, glist, S, soln)
 {
-  Teuchos::ParameterList vlist;
-  vo_ = Teuchos::rcp(new VerboseObject("CoupledFlow_PK", vlist));
   Teuchos::RCP<Teuchos::ParameterList> pks_list = Teuchos::sublist(glist, "PKs");
   if (pks_list->isSublist(name_)) {
     plist_ = Teuchos::sublist(pks_list, name_);
@@ -49,6 +47,10 @@ FlowMatrixFracture_PK::FlowMatrixFracture_PK(Teuchos::ParameterList& pk_tree,
   preconditioner_list_ = Teuchos::sublist(glist, "preconditioners", true);
   linear_operator_list_ = Teuchos::sublist(glist, "solvers", true);
   ti_list_ = Teuchos::sublist(plist_, "time integrator", true);
+
+  Teuchos::ParameterList vlist;
+  vlist.sublist("verbose object") = plist_->sublist("verbose object");
+  vo_ = Teuchos::rcp(new VerboseObject("CoupledFlow_PK", vlist));
 }
 
 
@@ -67,7 +69,7 @@ void FlowMatrixFracture_PK::Setup(const Teuchos::Ptr<State>& S)
   if (!S->HasField("pressure")) {
     *S->RequireField("pressure", "flow")->SetMesh(mesh_domain_)->SetGhosted(true) = *cvs;
 
-    AddDefaultPrimaryEvaluator("pressure");
+    AddDefaultPrimaryEvaluator_("pressure");
   }
 
   // -- darcy flux
@@ -78,7 +80,7 @@ void FlowMatrixFracture_PK::Setup(const Teuchos::Ptr<State>& S)
     S->RequireField("darcy_flux", "flow")->SetMesh(mesh_domain_)->SetGhosted(true)
       ->SetComponent(name, AmanziMesh::FACE, mmap, gmap, 1);
 
-    AddDefaultPrimaryEvaluator("darcy_flux");
+    AddDefaultPrimaryEvaluator_("darcy_flux");
   }
 
   // -- darcy flux for fracture
@@ -86,7 +88,7 @@ void FlowMatrixFracture_PK::Setup(const Teuchos::Ptr<State>& S)
     auto cvs2 = Operators::CreateNonManifoldCVS(mesh_fracture_);
     *S->RequireField("fracture-darcy_flux", "flow")->SetMesh(mesh_fracture_)->SetGhosted(true) = *cvs2;
 
-    AddDefaultPrimaryEvaluator("fracture-darcy_flux");
+    AddDefaultPrimaryEvaluator_("fracture-darcy_flux");
   }
 
   // Require additional fields and evaluators
@@ -123,7 +125,16 @@ void FlowMatrixFracture_PK::Initialize(const Teuchos::Ptr<State>& S)
 {
   PK_MPCStrong<PK_BDF>::Initialize(S);
 
-  auto tvs = Teuchos::rcp(new TreeVectorSpace(solution_->Map()));
+  // since solution's map could be anything, to create a global operator,
+  // we have to rely on pk's operator structure.
+  auto tvs = Teuchos::rcp(new TreeVectorSpace());
+
+  for (const auto& pk : sub_pks_) {
+    auto& cvs = pk->my_operator(Operators::OPERATOR_MATRIX)->get_domain_map();
+    auto tmp = Teuchos::rcp(new TreeVectorSpace(cvs));
+    tvs->PushBack(tmp);
+  }
+
   op_tree_matrix_ = Teuchos::rcp(new Operators::TreeOperator(tvs));
 
   // we assume that 0 and 1 correspond to matrix and fracture, respectively

@@ -137,7 +137,7 @@ Teuchos::ParameterList InputConverterU::TranslateTransport_(const std::string& d
 
   node = GetUniqueElementByTagsString_("unstructured_controls, unstr_transport_controls, limiter_stencil", flag);
   if (flag) {
-    std::string stencil = GetTextContentS_(node, "node-to-cells, face-to-cells, cell-to-closest-cells");
+    std::string stencil = GetTextContentS_(node, "node-to-cells, face-to-cells, cell-to-closest-cells, cell-to-all-cells");
     std::replace(stencil.begin(), stencil.end(), '-', ' ');
     trp_lift.set<std::string>("limiter stencil", stencil);
   }
@@ -148,7 +148,7 @@ Teuchos::ParameterList InputConverterU::TranslateTransport_(const std::string& d
                     (doc_->getElementsByTagName(mm.transcode("tortuosity"))->getLength() > 0);
 
   // create dispersion list
-  if (dispersion && domain == "matrix") {
+  if (dispersion && domain != "fracture") {
     node_list = doc_->getElementsByTagName(mm.transcode("materials"));
 
     Teuchos::ParameterList& mat_list = out_list.sublist("material properties");
@@ -481,10 +481,10 @@ Teuchos::ParameterList InputConverterU::TranslateTransportBCs_(const std::string
   DOMElement* element;
 
   bool flag;
-  if (domain == "matrix")
-    node = GetUniqueElementByTagsString_("boundary_conditions", flag);
-  else
+  if (domain == "fracture")
     node = GetUniqueElementByTagsString_("fracture_network, boundary_conditions", flag);
+  else
+    node = GetUniqueElementByTagsString_("boundary_conditions", flag);
   if (!flag) return out_list;
 
   children = node->getChildNodes();
@@ -707,19 +707,25 @@ void InputConverterU::TranslateTransportBCsAmanziGeochemistry_(
 
     node = GetUniqueElementByTagsString_("geochemistry, constraints", flag);
 
-    Teuchos::ParameterList& bc_new = out_list.sublist("concentration");
+    Teuchos::ParameterList& bc_new = out_list.sublist("constraints");
     Teuchos::ParameterList& bc_old = out_list.sublist("geochemical");
 
     for (auto it = bc_old.begin(); it != bc_old.end(); ++it) {
       name = it->first;
  
       Teuchos::ParameterList& bco = bc_old.sublist(name);
+      Teuchos::ParameterList& bcn = bc_new.sublist(name);
+
       std::vector<std::string> solutes = bco.get<Teuchos::Array<std::string> >("solutes").toVector();
+      int nsolutes = solutes.size();
+      Teuchos::Array<std::string> types(nsolutes);
 
-      for (int n = 0; n < solutes.size(); ++n) {
-        Teuchos::ParameterList& bcn = bc_new.sublist(solutes[n]).sublist(name);
-        Teuchos::ParameterList& fnc = bcn.sublist("boundary concentration").sublist("function-tabular");
+      bcn.sublist("boundary constraints").set<int>("number of dofs", nsolutes);
 
+      for (int n = 0; n < nsolutes; ++n) {
+        std::stringstream dof;
+        dof << "dof " << n + 1 << " function";
+        Teuchos::ParameterList& fnc = bcn.sublist("boundary constraints").sublist(dof.str()).sublist("function-tabular");
 
         bcn.set("regions", bco.get<Teuchos::Array<std::string> >("regions"))
            .set<std::string>("spatial distribution method", "none")
@@ -736,9 +742,11 @@ void InputConverterU::TranslateTransportBCsAmanziGeochemistry_(
           element = GetUniqueChildByAttribute_(node, "name", constraints[i], flag, true);
           element = GetUniqueChildByAttribute_(element, "name", solutes[n], flag, true);
           values.push_back(GetAttributeValueD_(element, "value"));
+          types[n] = GetAttributeValueS_(element, "type");  // FIXME
         }
         fnc.set("y values", values);
       }
+      bcn.set<Teuchos::Array<std::string> >("names", types);
     }
 
     out_list.remove("geochemical");

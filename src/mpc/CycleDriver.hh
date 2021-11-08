@@ -53,8 +53,8 @@ class CycleDriver {
   void Finalize();
   void ReportMemory();
   double Advance(double dt);
-  void Visualize(bool force = false);
-  void Observations(bool force = false);
+  void Visualize(bool force = false, const std::string& tag = "");
+  void Observations(bool force = false, bool integrate = false);
   void WriteCheckpoint(double dt, bool force = false);
   void WriteWalkabout(bool force);
   //  void RegisterOutput();
@@ -77,7 +77,6 @@ class CycleDriver {
 
   // states
   Teuchos::RCP<State> S_, S_old_;
-  Teuchos::RCP<const AmanziMesh::Mesh> mesh_;
   Teuchos::RCP<TreeVector> soln_;
 
   // time step manager
@@ -121,6 +120,18 @@ class CycleDriver {
   // fancy OS
   Teuchos::RCP<VerboseObject> vo_;
 };
+
+
+// non-meber function
+// names of all fields that go into a vis file
+inline
+std::set<std::string> StateVisFields(const State& S)
+{
+  std::set<std::string> fields;
+  for (auto it = S.field_begin(); it != S.field_end(); ++it) 
+    if (it->second->io_vis()) fields.insert(it->first);
+  return fields;
+}
 
 }  // namespace Amanzi
 

@@ -37,9 +37,6 @@ int Operator_FaceCell::ApplyMatrixFreeOp(const Op_Cell_FaceCell& op,
                                          const CompositeVector& X, CompositeVector& Y) const
 {
   AMANZI_ASSERT(op.matrices.size() == ncells_owned);
-
-  Y.PutScalarGhosted(0.0);
-  X.ScatterMasterToGhosted();
   const Epetra_MultiVector& Xf = *X.ViewComponent("face", true);
   const Epetra_MultiVector& Xc = *X.ViewComponent("cell");
 
@@ -49,9 +46,8 @@ int Operator_FaceCell::ApplyMatrixFreeOp(const Op_Cell_FaceCell& op,
 
     const auto& map = Yf.Map();
 
-    AmanziMesh::Entity_ID_List faces;
     for (int c = 0; c != ncells_owned; ++c) {
-      mesh_->cell_get_faces(c, &faces);
+      const auto& faces = mesh_->cell_get_faces(c);
       int nfaces = faces.size();
 
       int npoints(0);
@@ -82,10 +78,8 @@ int Operator_FaceCell::ApplyMatrixFreeOp(const Op_Cell_FaceCell& op,
         }
       }
       Yc[0][c] += av(npoints);
-    } 
+    }
   }
-
-  Y.GatherGhostedToMaster(Add);
   return 0;
 }
 
@@ -97,17 +91,13 @@ int Operator_FaceCell::ApplyMatrixFreeOp(const Op_Cell_Face& op,
                                          const CompositeVector& X, CompositeVector& Y) const
 {
   AMANZI_ASSERT(op.matrices.size() == ncells_owned);
-
-  Y.PutScalarGhosted(0.);
-  X.ScatterMasterToGhosted();
   const Epetra_MultiVector& Xf = *X.ViewComponent("face", true);
 
   {
     Epetra_MultiVector& Yf = *Y.ViewComponent("face", true);
 
-    AmanziMesh::Entity_ID_List faces;
     for (int c = 0; c != ncells_owned; ++c) {
-      mesh_->cell_get_faces(c, &faces);
+      const auto& faces = mesh_->cell_get_faces(c);
       int nfaces = faces.size();
 
       WhetStone::DenseVector v(nfaces), av(nfaces);
@@ -121,10 +111,8 @@ int Operator_FaceCell::ApplyMatrixFreeOp(const Op_Cell_Face& op,
       for (int n = 0; n != nfaces; ++n) {
         Yf[0][faces[n]] += av(n);
       }
-    } 
+    }
   }
-
-  Y.GatherGhostedToMaster(Add);
   return 0;
 }
 
@@ -143,7 +131,7 @@ int Operator_FaceCell::ApplyMatrixFreeOp(const Op_SurfaceCell_SurfaceCell& op,
   for (int sc = 0; sc != nsurf_cells; ++sc) {
     int f = op.surf_mesh->entity_get_parent(AmanziMesh::CELL, sc);
     Yf[0][f] += (*op.diag)[0][sc] * Xf[0][f];
-  } 
+  }
   return 0;
 }
 
@@ -156,13 +144,9 @@ int Operator_FaceCell::ApplyMatrixFreeOp(const Op_SurfaceFace_SurfaceCell& op,
 {
   int nsurf_faces = op.surf_mesh->num_entities(AmanziMesh::FACE, AmanziMesh::Parallel_type::OWNED);
   AMANZI_ASSERT(op.matrices.size() == nsurf_faces);
-
-  X.ScatterMasterToGhosted();
   const Epetra_MultiVector& Xf = *X.ViewComponent("face", true);
-
-  Y.PutScalarGhosted(0.);
   Epetra_MultiVector& Yf = *Y.ViewComponent("face", true);
-  
+
   AmanziMesh::Entity_ID_List cells;
   for (int sf = 0; sf != nsurf_faces; ++sf) {
     op.surf_mesh->face_get_cells(sf, AmanziMesh::Parallel_type::ALL, &cells);
@@ -179,8 +163,7 @@ int Operator_FaceCell::ApplyMatrixFreeOp(const Op_SurfaceFace_SurfaceCell& op,
     for (int n = 0; n != ncells; ++n) {
       Yf[0][op.surf_mesh->entity_get_parent(AmanziMesh::CELL, cells[n])] += av(n);
     }
-  } 
-  Y.GatherGhostedToMaster("face");
+  }
   return 0;
 }
 
@@ -205,9 +188,8 @@ void Operator_FaceCell::SymbolicAssembleMatrixOp(const Op_Cell_FaceCell& op,
   Teuchos::RCP<const Epetra_BlockMap> cell_map = map.ComponentMap(my_block_row, "cell");
   
   int ierr(0);
-  AmanziMesh::Entity_ID_List faces;
   for (int c = 0; c != ncells_owned; ++c) {
-    mesh_->cell_get_faces(c, &faces);
+    const auto& faces = mesh_->cell_get_faces(c);
     int nfaces = faces.size();
 
     int k = 0;
@@ -254,9 +236,8 @@ void Operator_FaceCell::SymbolicAssembleMatrixOp(const Op_Cell_Face& op,
   Teuchos::RCP<const Epetra_BlockMap> face_gh_map = map.ComponentGhostedMap(my_block_row, "face");
 
   int ierr(0);
-  AmanziMesh::Entity_ID_List faces;
   for (int c = 0; c != ncells_owned; ++c) {
-    mesh_->cell_get_faces(c, &faces);
+    const auto& faces = mesh_->cell_get_faces(c);
     int nfaces = faces.size();
 
     int k = 0;
@@ -356,11 +337,10 @@ void Operator_FaceCell::AssembleMatrixOp(const Op_Cell_FaceCell& op,
   Teuchos::RCP<const Epetra_BlockMap> cell_map = map.ComponentMap(my_block_row, "cell");
 
   int ierr(0);
-  AmanziMesh::Entity_ID_List faces;
   for (int c = 0; c != ncells_owned; ++c) {
-    mesh_->cell_get_faces(c, &faces);
-    
+    const auto& faces = mesh_->cell_get_faces(c);
     int nfaces = faces.size();
+
     int k = 0;
     for (int n = 0; n != nfaces; ++n) {
       int f = faces[n];
@@ -407,9 +387,8 @@ void Operator_FaceCell::AssembleMatrixOp(const Op_Cell_Face& op,
   Teuchos::RCP<const Epetra_BlockMap> face_gh_map = map.ComponentGhostedMap(my_block_row, "face");
 
   int ierr(0);
-  AmanziMesh::Entity_ID_List faces;
   for (int c = 0; c != ncells_owned; ++c) {
-    mesh_->cell_get_faces(c, &faces);
+    const auto& faces = mesh_->cell_get_faces(c);
     int nfaces = faces.size();
 
     int k = 0;

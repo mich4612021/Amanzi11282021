@@ -57,7 +57,7 @@ TEST(MULTIPHASE_2P2C) {
   MeshFactory meshfactory(comm, gm);
   meshfactory.set_preference(Preference({Framework::MSTK}));
   // RCP<const Mesh> mesh = meshfactory.create(0.0, 0.0, 200.0, 20.0, 200, 10);
-  RCP<const Mesh> mesh = meshfactory.create(0.0, 0.0, 200.0, 20.0, 50, 3);
+  RCP<const Mesh> mesh = meshfactory.create(0.0, 0.0, 200.0, 12.0, 50, 3);
 
   // create screen io
   auto vo = Teuchos::rcp(new Amanzi::VerboseObject("Multiphase_PK", *plist));
@@ -103,7 +103,7 @@ TEST(MULTIPHASE_2P2C) {
 
     // output solution
     if (iloop % 5 == 0) {
-      io->InitializeCycle(t, iloop);
+      io->InitializeCycle(t, iloop, "");
       const auto& u0 = *S->GetFieldData("pressure_liquid")->ViewComponent("cell");
       const auto& u1 = *S->GetFieldData("saturation_liquid")->ViewComponent("cell");
       const auto& u2 = *S->GetFieldData("molar_density_liquid")->ViewComponent("cell");

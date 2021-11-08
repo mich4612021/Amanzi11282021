@@ -90,9 +90,8 @@ void Operator_FaceCellSff::AssembleMatrix(const SuperMap& map, MatrixFE& matrix,
       }
 
       // populate the schur component
-      AmanziMesh::Entity_ID_List faces;
       for (int c = 0; c != ncells_owned; ++c) {
-        mesh_->cell_get_faces(c, &faces);
+        const auto& faces = mesh_->cell_get_faces(c);
         int nfaces = faces.size();
 
         WhetStone::DenseMatrix& Scell = schur_op->matrices[c];
@@ -128,19 +127,14 @@ int Operator_FaceCellSff::ApplyMatrixFreeOp(const Op_Cell_FaceCell& op,
                                             const CompositeVector& X, CompositeVector& Y) const
 {
   AMANZI_ASSERT(op.matrices.size() == ncells_owned);
-
-  X.ScatterMasterToGhosted();
   const Epetra_MultiVector& Xf = *X.ViewComponent("face", true);
   const Epetra_MultiVector& Xc = *X.ViewComponent("cell");
-  Y.PutScalarGhosted(0.);
-  
   {
     Epetra_MultiVector& Yf = *Y.ViewComponent("face", true);
     Epetra_MultiVector& Yc = *Y.ViewComponent("cell");
 
-    AmanziMesh::Entity_ID_List faces;
     for (int c=0; c!=ncells_owned; ++c) {
-      mesh_->cell_get_faces(c, &faces);
+      const auto& faces = mesh_->cell_get_faces(c);
       int nfaces = faces.size();
 
       WhetStone::DenseVector v(nfaces + 1), av(nfaces + 1);
@@ -158,8 +152,6 @@ int Operator_FaceCellSff::ApplyMatrixFreeOp(const Op_Cell_FaceCell& op,
       Yc[0][c] += av(nfaces);
     }
   }
-
-  Y.GatherGhostedToMaster(Add);
   return 0;
 }
 
@@ -188,6 +180,7 @@ void Operator_FaceCellSff::SymbolicAssembleMatrix()
   // create global matrix
   Amat_ = Teuchos::rcp(new MatrixFE(graph));
   A_ = Amat_->Matrix();
+  assembly_complete_ = false;
 }
 
 
@@ -205,7 +198,12 @@ void Operator_FaceCellSff::SymbolicAssembleMatrixOp(const Op_Cell_FaceCell& op,
 
 void Operator_FaceCellSff::InitializeInverse()
 {
-  AMANZI_ASSERT(inited_);
+  if (!inverse_pars_set_) {
+    Errors::Message msg("No inverse parameter list.  Provide a sublist \"inverse\" or ensure set_inverse_parameters() is called.");
+    msg << " In: " << typeid(*this).name() << "\n";
+    Exceptions::amanzi_throw(msg);
+  }
+
   schur_inv_ = Teuchos::rcp(new AmanziSolvers::InverseSchurComplement());
   schur_inv_->set_inverse_parameters(inv_plist_);
   schur_inv_->set_matrix(Teuchos::rcpFromRef(*this));
@@ -216,8 +214,8 @@ void Operator_FaceCellSff::InitializeInverse()
     preconditioner_ = schur_inv_;
   }
   preconditioner_->InitializeInverse();
-  updated_ = true;
-  computed_ = false;
+  initialize_complete_ = true;
+  compute_complete_ = false;
 }
 
 /* ******************************************************************

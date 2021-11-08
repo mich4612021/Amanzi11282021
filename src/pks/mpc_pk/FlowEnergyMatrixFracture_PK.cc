@@ -73,12 +73,12 @@ void FlowEnergyMatrixFracture_PK::Setup(const Teuchos::Ptr<State>& S)
   auto cvs = Operators::CreateFracturedMatrixCVS(mesh_domain_, mesh_fracture_);
   if (!S->HasField("pressure")) {
     *S->RequireField("pressure", "flow")->SetMesh(mesh_domain_)->SetGhosted(true) = *cvs;
-    AddDefaultPrimaryEvaluator("pressure");
+    AddDefaultPrimaryEvaluator_("pressure");
   }
 
   if (!S->HasField("temperature")) {
     *S->RequireField("temperature", "thermal")->SetMesh(mesh_domain_)->SetGhosted(true) = *cvs;
-    AddDefaultPrimaryEvaluator("temperature");
+    AddDefaultPrimaryEvaluator_("temperature");
   }
 
   // -- darcy flux
@@ -89,7 +89,7 @@ void FlowEnergyMatrixFracture_PK::Setup(const Teuchos::Ptr<State>& S)
     S->RequireField("darcy_flux", "flow")->SetMesh(mesh_domain_)->SetGhosted(true)
       ->SetComponent(name, AmanziMesh::FACE, mmap, gmap, 1);
 
-    AddDefaultPrimaryEvaluator("darcy_flux");
+    AddDefaultPrimaryEvaluator_("darcy_flux");
   }
 
   // -- darcy flux for fracture
@@ -111,20 +111,24 @@ void FlowEnergyMatrixFracture_PK::Setup(const Teuchos::Ptr<State>& S)
 
   // inform dependent PKs about coupling
   // -- flow
-  auto & mflow = glist_->sublist("PKs").sublist("flow matrix")
+  auto pks0 = plist_->get<Teuchos::Array<std::string> >("PKs order").toVector();
+  auto pks1 = glist_->sublist("PKs").sublist(pks0[0]).get<Teuchos::Array<std::string> >("PKs order").toVector();
+  auto pks2 = glist_->sublist("PKs").sublist(pks0[1]).get<Teuchos::Array<std::string> >("PKs order").toVector();
+
+  auto & mflow = glist_->sublist("PKs").sublist(pks1[0])
                         .sublist("physical models and assumptions");
   mflow.set<std::string>("coupled matrix fracture flow", "matrix");
 
-  auto& fflow = glist_->sublist("PKs").sublist("flow fracture")
+  auto& fflow = glist_->sublist("PKs").sublist(pks2[0])
                        .sublist("physical models and assumptions");
   fflow.set<std::string>("coupled matrix fracture flow", "fracture");
 
   // -- energy
-  auto& menergy = glist_->sublist("PKs").sublist("energy matrix")
+  auto& menergy = glist_->sublist("PKs").sublist(pks1[1])
                          .sublist("physical models and assumptions");
   menergy.set<std::string>("coupled matrix fracture energy", "matrix");
 
-  auto& fenergy = glist_->sublist("PKs").sublist("energy fracture")
+  auto& fenergy = glist_->sublist("PKs").sublist(pks2[1])
                          .sublist("physical models and assumptions");
   fenergy.set<std::string>("coupled matrix fracture energy", "fracture");
 
@@ -157,17 +161,13 @@ void FlowEnergyMatrixFracture_PK::Initialize(const Teuchos::Ptr<State>& S)
   // NOTE: In this PK, the solution is 2-deep, with 2 sub-PKs (matrix,
   // fracture) each with 2 sub-pks of their own (flow,energy).  Currently
   // TreeOperator cannot handle this, so instead we must flatten the map.
-  //
-  // This blob of code should go away in favor of:
-  //   auto tvs = solution_->Map();
-  // once we have a hierarchical TreeOperator.
   auto tvs = Teuchos::rcp(new TreeVectorSpace());
-  for (const auto& subvec_domain : *solution_) {
-    for (const auto& subvec_pk : (*subvec_domain)) {
-      tvs->PushBack(Teuchos::rcp(new TreeVectorSpace(subvec_pk->Map())));
-    }
+  for (const auto& pk : sub_pks_) {
+    auto mpc_pk = Teuchos::rcp_dynamic_cast<PK_MPCStrong>(pk);
+    auto sub_tvs = mpc_pk->op_tree_matrix()->DomainMap();
+    for (const auto& tmp : sub_tvs) tvs->PushBack(tmp);
   }
-  // end blob
+
   AMANZI_ASSERT(tvs->size() == 4);
   op_tree_matrix_ = Teuchos::rcp(new Operators::TreeOperator(tvs));
   op_tree_pc_ = Teuchos::rcp(new Operators::FlatTreeOperator(tvs));
@@ -291,8 +291,7 @@ void FlowEnergyMatrixFracture_PK::Initialize(const Teuchos::Ptr<State>& S)
 
   if (vo_->getVerbLevel() >= Teuchos::VERB_MEDIUM) {
     Teuchos::OSTab tab = vo_->getOSTab();
-    *vo_->os() 
-               << op_tree_matrix_->PrintDiagnostics() << std::endl
+    *vo_->os() << op_tree_matrix_->PrintDiagnostics() << std::endl
                << "preconditioner:" << std::endl
                << op_tree_pc_->PrintDiagnostics() << std::endl
                << vo_->color("green") << "Initialization of PK is complete: my dT=" << get_dt()
@@ -317,7 +316,20 @@ bool FlowEnergyMatrixFracture_PK::AdvanceStep(double t_old, double t_new, bool r
     k += 2;
   }
 
-  bool fail = PK_MPCStrong<PK_BDF>::AdvanceStep(t_old, t_new, reinit);
+  // make copy of primary unknowns
+  // save a copy of solution, i.e. primary variables
+  TreeVector solution_copy(*solution_);
+
+  bool fail;
+  try {
+    fail = PK_MPCStrong<PK_BDF>::AdvanceStep(t_old, t_new, reinit);
+  } catch(Errors::CutTimeStep& e) {
+    if (vo_->os_OK(Teuchos::VERB_HIGH)) {
+      Teuchos::OSTab tab = vo_->getOSTab();
+      *vo_->os() << e.what() << std::endl;
+    }
+    fail = false;
+  }
 
   if (fail) {
     k = 0;
@@ -329,9 +341,13 @@ bool FlowEnergyMatrixFracture_PK::AdvanceStep(double t_old, double t_new, bool r
       k += 2;
     }
 
+    // recover the original solution
+    *solution_ = solution_copy;
+    ChangedSolution();
+
     Teuchos::OSTab tab = vo_->getOSTab();
     *vo_->os() << "Step failed. Restored [fracture-]{ " << names[0] << ", "
-               << names[1] << ", " << names[2] << " }" << std::endl;
+               << names[1] << ", " << names[2] << ", pressure, temperature }" << std::endl;
   }
 
   return fail;
@@ -356,6 +372,9 @@ void FlowEnergyMatrixFracture_PK::FunctionalResidual(
 
   ApplyFlattened(*op_tree_matrix_, *u_new, g);
   f->Update(1.0, g, 1.0);
+
+  // convergence control
+  f->NormInf(&residual_norm_);
 }
 
 
@@ -516,7 +535,6 @@ void FlowEnergyMatrixFracture_PK::UpdateCouplingFluxes_(
   AmanziMesh::Entity_ID_List cells;
   const auto& flux = *S_->GetFieldData("darcy_flux")->ViewComponent("face", true);
   const auto& mmap = flux.Map();
-
   for (int c = 0; c < ncells_owned_f; ++c) {
     int f = mesh_fracture_->entity_get_parent(AmanziMesh::CELL, c);
     int first = mmap.FirstPointInElement(f);
@@ -529,7 +547,7 @@ void FlowEnergyMatrixFracture_PK::UpdateCouplingFluxes_(
     for (int k = 0; k < ncells; ++k) {
       double tmp = flux[0][first + shift] * dir;
 
-      // since we multiply by temperatur, the model for the flux is
+      // since we multiply by temperature, the model for the flux is
       // q (\eta H / T) * T for both matrix and preconditioner
       if (tmp > 0) {
         int c1 = cells[k];
@@ -617,11 +635,48 @@ int ApplyFlattened(const Operators::TreeOperator& op, const TreeVector& X, TreeV
     for (auto it = Xtv.begin(); it != Xtv.end(); ++it, ++m) {
       auto block = op.get_operator_block(n,m);
       if (block != Teuchos::null) {
-        ierr |= block->Apply(*(*it)->Data(), yN, 1.0);
+        const CompositeVector& xN = *(*it)->Data();
+        ierr |= block->Apply(xN, yN, 1.0);
       }
     }
   }
   return ierr;
+}
+
+
+/* ******************************************************************
+* Check solution and fields for convergence  
+****************************************************************** */
+double FlowEnergyMatrixFracture_PK::ErrorNorm(
+    Teuchos::RCP<const TreeVector> u, 
+    Teuchos::RCP<const TreeVector> du)
+{
+  double error = PK_MPCStrong<PK_BDF>::ErrorNorm(u, du);
+
+  // residual control for energy (note that we cannot do it at
+  // the lower level due to coupling terms.
+  const auto mesh_f = S_->GetMesh("fracture");
+  const auto& mol_fc = *S_->GetFieldData("fracture-molar_density_liquid")->ViewComponent("cell");
+
+  int ncells = mol_fc.MyLength();
+  double mean_energy, error_r(0.0), mass(0.0);
+
+  for (int c = 0; c < ncells; ++c) {
+    mass += mol_fc[0][c] * mesh_f->cell_volume(c);  // reference cell energy
+  }
+  if (ncells > 0) {
+    mean_energy = 76.0 * mass / ncells;
+    error_r = (residual_norm_ * dt_) / mean_energy;
+  }
+
+  error = std::max(error, error_r);
+
+#ifdef HAVE_MPI
+    double tmp = error;
+    u->Comm()->MaxAll(&tmp, &error, 1);
+#endif
+
+  return error;
 }
 
 }  // namespace Amanzi

@@ -35,9 +35,8 @@ namespace Operators {
 * contains (up to) three components:
 *
 * "cell" - cell-centered values of the field.
-* "dirichlet_faces" - boundary_face values of the field evaluated on
-*          the boundary (either as a function of the internal cell
-*          or as a function of the Dirichlet data)
+* "boundary_face" - field values evaluated on the boundary either 
+           from internal cell or as a function of Dirichlet data.
 * "grad" - (optional) eatimate of the gradient of the input field.
 *          It is used in the second-order upwind schemes.
 *
@@ -78,7 +77,6 @@ class Upwind {
     Teuchos::RCP<CompositeVectorSpace> cvs = Teuchos::rcp(new CompositeVectorSpace());
     cvs->SetMesh(mesh_)->SetGhosted(true)
         ->AddComponent("cell", AmanziMesh::CELL, 1)
-        ->AddComponent("dirichlet_faces", AmanziMesh::BOUNDARY_FACE, 1)
         ->AddComponent("face", AmanziMesh::FACE, 1);
     return cvs;
   }

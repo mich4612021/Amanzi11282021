@@ -49,7 +49,7 @@
 
 namespace Amanzi {
 
-bool reset_info_compfunc(std::pair<double,double> x, std::pair<double,double> y) {
+bool reset_info_compfunc(const std::pair<double,double>& x, const std::pair<double,double>& y) {
   return (x.first < y.first);
 }
 
@@ -82,8 +82,6 @@ CycleDriver::CycleDriver(Teuchos::RCP<Teuchos::ParameterList> glist,
     observations_data_(observations_data),
     restart_requested_(false) {
 
-  mesh_ = S_->GetMesh("domain");
-  
   // create and start the global timer
   CoordinatorInit_();
 
@@ -159,7 +157,7 @@ void CycleDriver::Setup() {
   // create the checkpointing
   if (glist_->isSublist("checkpoint data")) {
     Teuchos::ParameterList& chkp_plist = glist_->sublist("checkpoint data");
-    checkpoint_ = Teuchos::rcp(new Amanzi::Checkpoint(chkp_plist, comm_));
+    checkpoint_ = Teuchos::rcp(new Amanzi::Checkpoint(chkp_plist, *S_));
   }
   else {
     checkpoint_ = Teuchos::rcp(new Amanzi::Checkpoint());
@@ -168,7 +166,7 @@ void CycleDriver::Setup() {
   // create the walkabout
   if (glist_->isSublist("walkabout data")) {
     Teuchos::ParameterList& walk_plist = glist_->sublist("walkabout data");
-    walkabout_ = Teuchos::rcp(new Amanzi::WalkaboutCheckpoint(walk_plist, comm_));
+    walkabout_ = Teuchos::rcp(new Amanzi::WalkaboutCheckpoint(walk_plist, *S_));
   }
   else {
     walkabout_ = Teuchos::rcp(new Amanzi::WalkaboutCheckpoint());
@@ -176,7 +174,7 @@ void CycleDriver::Setup() {
 
   // vis successful steps
   bool surface_done = false;
-  for (auto mesh=S_->mesh_begin(); mesh!=S_->mesh_end(); ++mesh) {
+  for (auto mesh = S_->mesh_begin(); mesh != S_->mesh_end(); ++mesh) {
     if (mesh->first == "surface_3d") {
       // pass
     } else if ((mesh->first == "surface") && surface_done) {
@@ -221,8 +219,8 @@ void CycleDriver::Setup() {
     }
     if (glist_->isSublist(plist_name)) {
       auto& mesh_info_list = glist_->sublist(plist_name);
-      Teuchos::RCP<Amanzi::MeshInfo> mesh_info = Teuchos::rcp(new Amanzi::MeshInfo(mesh_info_list, comm_));
-      mesh_info->WriteMeshCentroids(*(mesh->second.first));
+      Teuchos::RCP<Amanzi::MeshInfo> mesh_info = Teuchos::rcp(new Amanzi::MeshInfo(mesh_info_list, *S_));
+      mesh_info->WriteMeshCentroids(mesh->first, *(mesh->second.first));
     }
   }
 
@@ -284,6 +282,7 @@ void CycleDriver::Initialize() {
   S_->CheckAllFieldsInitialized();
 
   // S_->WriteDependencyGraph();
+  S_->InitializeIOFlags(); 
 
   // commit the initial conditions.
   // pk_->CommitStep(t0_-get_dt(), get_dt());
@@ -302,7 +301,7 @@ void CycleDriver::Initialize() {
 void CycleDriver::Finalize() {
   if (!checkpoint_->DumpRequested(S_->cycle(), S_->time())) {
     pk_->CalculateDiagnostics(S_);
-    Amanzi::WriteCheckpoint(*checkpoint_, *S_, 0.0, true, &observations_data_);
+    checkpoint_->Write(*S_, 0.0, true, &observations_data_);
   }
 }
 
@@ -631,7 +630,7 @@ double CycleDriver::Advance(double dt) {
     if (advance) {
       pk_->CalculateDiagnostics(S_);
       Visualize(force_vis);
-      Observations(force_obser);
+      Observations(force_obser, true);
       WriteCheckpoint(dt_new, force_check);   // write Checkpoint with new dt
       WriteWalkabout(force_check);
     }
@@ -659,11 +658,15 @@ double CycleDriver::Advance(double dt) {
 
 
 /* ******************************************************************
-* Make observations.
+* Make observations
 ****************************************************************** */
-void CycleDriver::Observations(bool force) {
+void CycleDriver::Observations(bool force, bool integrate) {
   if (observations_ != Teuchos::null) {
+    // integrate continuous observations in time and save results in internal variables
+    if (integrate) observations_->MakeContinuousObservations(*S_);
+
     if (observations_->DumpRequested(S_->cycle(), S_->time()) || force) {
+      // continuous observations are not updated here
       int n = observations_->MakeObservations(*S_);
       Teuchos::OSTab tab = vo_->getOSTab();
       *vo_->os() << "Cycle " << S_->cycle() << ": writing observations... " << n << std::endl;
@@ -673,9 +676,9 @@ void CycleDriver::Observations(bool force) {
 
 
 /* ******************************************************************
-* Write visualization if requested.
+* Write visualization file with extension (cycle + tag) if requested.
 ****************************************************************** */
-void CycleDriver::Visualize(bool force) {
+void CycleDriver::Visualize(bool force, const std::string& tag) {
   bool dump = force;
   if (!dump) {
     for (std::vector<Teuchos::RCP<Visualization> >::iterator vis=visualization_.begin();
@@ -690,6 +693,7 @@ void CycleDriver::Visualize(bool force) {
   
   for (const auto& vis : visualization_) {
     if (force || vis->DumpRequested(S_->cycle(), S_->time())) {
+      vis->set_tag(tag);
       WriteVis(*vis, *S_);
       Teuchos::OSTab tab = vo_->getOSTab();
       *vo_->os() << "writing visualization file" << std::endl;
@@ -709,7 +713,7 @@ void CycleDriver::WriteCheckpoint(double dt, bool force) {
       final = true;
     }
 
-    Amanzi::WriteCheckpoint(*checkpoint_, *S_, dt, final, &observations_data_);
+    checkpoint_->Write(*S_, dt, final, &observations_data_);
     
     Teuchos::OSTab tab = vo_->getOSTab();
     *vo_->os() << "writing checkpoint file" << std::endl;
@@ -784,7 +788,7 @@ Teuchos::RCP<State> CycleDriver::Go() {
     S_->GetMeshPartition("materials");
     
     // re-initialize the state object
-    restart_dT = ReadCheckpoint(comm_, *S_, restart_filename_);
+    restart_dT = ReadCheckpoint(*S_, restart_filename_);
 
     cycle0_ = S_->cycle();
     for (std::vector<std::pair<double,double> >::iterator it = reset_info_.begin();
@@ -818,7 +822,7 @@ Teuchos::RCP<State> CycleDriver::Go() {
   }
 
   // enfoce consistent physics after initialization
-  // this is optionla but help corect statistics
+  // this is optional but helps with statistics
   S_->InitializeEvaluators();
 
   *S_->GetScalarData("dt", "coordinator") = dt;
@@ -829,6 +833,9 @@ Teuchos::RCP<State> CycleDriver::Go() {
 
   // visualization at IC
   // Amanzi::timer_manager.start("I/O");
+  // after initialization of State and PK we know all fields and clean of
+  S_->InitializeIOFlags(); 
+
   pk_->CalculateDiagnostics(S_);
   Visualize();
   Observations();
@@ -899,7 +906,7 @@ Teuchos::RCP<State> CycleDriver::Go() {
     // catch errors to dump two checkpoints -- one as a "last good" checkpoint
     // and one as a "debugging data" checkpoint.
     checkpoint_->set_filebasename("error_checkpoint");
-    WriteCheckpoint(*checkpoint_, *S_, dt);
+    checkpoint_->Write(*S_, dt);
     throw e;
   }
 #endif
@@ -982,6 +989,12 @@ void CycleDriver::ResetDriver(int time_pr_id) {
 
   pk_->set_dt(tp_dt_[time_pr_id]);
   max_dt_ = tp_max_dt_[time_pr_id];
+  
+  // conditional i/o after initialization is performed only when 
+  // new fields are added/removed to/from the state
+  auto fields_old = StateVisFields(*S_old_);
+  auto fields = StateVisFields(*S_);
+  if (fields_old != fields) Visualize(true, "ic");
 
   S_old_ = Teuchos::null;
 }

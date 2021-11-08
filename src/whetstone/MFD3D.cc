@@ -15,7 +15,7 @@
 #include <cmath>
 #include <vector>
 
-#include "Mesh.hh"
+#include "MeshLight.hh"
 #include "Point.hh"
 
 #include "MFD3D.hh"
@@ -27,7 +27,8 @@ namespace WhetStone {
 /* ******************************************************************
 * Constructors
 ****************************************************************** */
-MFD3D::MFD3D()
+MFD3D::MFD3D(const Teuchos::RCP<const AmanziMesh::MeshLight>& mesh)
+  : BilinearForm(mesh)
 {
   stability_method_ = WHETSTONE_STABILITY_GENERIC;
   scaling_factor_ = 1.0;
@@ -78,6 +79,7 @@ int MFD3D::StabilityOptimized_(const Tensor& T, DenseMatrix& N, DenseMatrix& M)
   double eigmin = M(0, 0);
   // T.spectral_bounds(&lower, &upper);
   for (int k = 1; k < nrows; k++) eigmin = std::min(eigmin, M(k, k));
+  double eigtol(eigmin / 100);
 
   // find null space of N^T
   DenseMatrix U(nrows, nrows);
@@ -165,7 +167,7 @@ int MFD3D::StabilityOptimized_(const Tensor& T, DenseMatrix& N, DenseMatrix& M)
     if (S[0] > eigmin) {
       break;
     } else if (loop == 2) {
-      for (int k = 0; k < mcols; k++) if (P(k, k) == 0.0) P(k, k) = eigmin;
+      for (int k = 0; k < mcols; k++) if (P(k, k) < eigtol) P(k, k) = eigmin;
     }
   }
 
@@ -630,13 +632,12 @@ void MFD3D::SimplexExchangeVariables_(DenseMatrix& T, int kp, int ip)
 /* ******************************************************************
 * Modify the stability space by extending matrix N.
 ****************************************************************** */
-void AddGradient(const Teuchos::RCP<const AmanziMesh::Mesh>& mesh, int c, DenseMatrix& N)
+void AddGradient(const Teuchos::RCP<const AmanziMesh::MeshLight>& mesh, int c, DenseMatrix& N)
 {
-  Entity_ID_List edges, nodes;
-
-  mesh->cell_get_edges(c, &edges);
+  const auto& edges = mesh->cell_get_edges(c);
   int nedges = edges.size();
 
+  Entity_ID_List nodes;
   mesh->cell_get_nodes(c, &nodes);
   int nnodes = nodes.size();
 

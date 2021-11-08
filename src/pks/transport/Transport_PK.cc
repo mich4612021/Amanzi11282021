@@ -37,6 +37,7 @@
 #include "MultiscaleTransportPorosityFactory.hh"
 #include "Transport_PK.hh"
 #include "TransportBoundaryFunction_Alquimia.hh"
+#include "TransportBoundaryFunction_Chemistry.hh"
 #include "TransportDomainFunction.hh"
 #include "TransportSourceFunction_Alquimia.hh"
 
@@ -127,11 +128,12 @@ Transport_PK::Transport_PK(const Teuchos::RCP<Teuchos::ParameterList>& glist,
 * Setup for Alquimia.
 ****************************************************************** */
 #ifdef ALQUIMIA_ENABLED
-void Transport_PK::SetupAlquimia(Teuchos::RCP<AmanziChemistry::Alquimia_PK> chem_pk,
-                                 Teuchos::RCP<AmanziChemistry::ChemistryEngine> chem_engine)
+void Transport_PK::SetupAlquimia()
 {
-  chem_pk_ = chem_pk;
-  chem_engine_ = chem_engine;
+  if (chem_pk_ == Teuchos::null) return;
+
+  alquimia_pk_ = Teuchos::rcp_dynamic_cast<AmanziChemistry::Alquimia_PK>(chem_pk_);
+  chem_engine_ = chem_pk_->chem_engine();
 
   if (chem_engine_ != Teuchos::null) {
     // Retrieve the component names (primary and secondary) from the chemistry 
@@ -159,6 +161,13 @@ void Transport_PK::Setup(const Teuchos::Ptr<State>& S)
   mesh_ = S->GetMesh(domain_);
   dim = mesh_->space_dimension();
 
+  // cross-coupling of PKs
+  auto physical_models = Teuchos::sublist(tp_list_, "physical models and assumptions");
+  bool abs_perm = physical_models->get<bool>("permeability field is required", false);
+  std::string multiscale_model = physical_models->get<std::string>("multiscale model", "single continuum");
+  use_transport_porosity_ = physical_models->get<bool>("effective transport porosity", false);
+  bool transport_on_manifold = physical_models->get<bool>("transport in fractures", false);
+
   // generate keys here to be available for setup of the base class
   tcc_key_ = Keys::getKey(domain_, "total_component_concentration"); 
 
@@ -166,23 +175,19 @@ void Transport_PK::Setup(const Teuchos::Ptr<State>& S)
   porosity_key_ = Keys::getKey(domain_, "porosity"); 
   transport_porosity_key_ = Keys::getKey(domain_, "transport_porosity"); 
 
-  darcy_flux_key_ = Keys::getKey(domain_, "darcy_flux"); 
+  std::string tmp = physical_models->get<std::string>("darcy flux key", "darcy_flux");
+  darcy_flux_key_ = Keys::getKey(domain_, tmp); 
 
-  saturation_liquid_key_ = Keys::getKey(domain_, "saturation_liquid"); 
-  prev_saturation_liquid_key_ = Keys::getKey(domain_, "prev_saturation_liquid"); 
+  tmp = physical_models->get<std::string>("saturation key", "saturation_liquid");
+  saturation_liquid_key_ = Keys::getKey(domain_, tmp); 
+  prev_saturation_liquid_key_ = Keys::getKey(domain_, "prev_" + tmp); 
 
   water_content_key_ = Keys::getKey(domain_, "water_content"); 
   prev_water_content_key_ = Keys::getKey(domain_, "prev_water_content"); 
 
-  // cross-coupling of PKs
-  Teuchos::RCP<Teuchos::ParameterList> physical_models =
-      Teuchos::sublist(tp_list_, "physical models and assumptions");
-  bool abs_perm = physical_models->get<bool>("permeability field is required", false);
-  std::string multiscale_model = physical_models->get<std::string>("multiscale model", "single continuum");
-  use_transport_porosity_ = physical_models->get<bool>("effective transport porosity", false);
-  bool transport_on_manifold = physical_models->get<bool>("transport in fractures", false);
-
   // require state fields when Flow PK is off
+  S_->RequireScalar("const_fluid_density", passwd_);
+
   if (!S->HasField(permeability_key_) && abs_perm) {
     S->RequireField(permeability_key_, passwd_)->SetMesh(mesh_)->SetGhosted(true)
       ->SetComponent("cell", AmanziMesh::CELL, dim);
@@ -291,6 +296,10 @@ void Transport_PK::Setup(const Teuchos::Ptr<State>& S)
         ->SetComponent("cell", AmanziMesh::CELL, 1);
     }
   }
+
+#ifdef ALQUIMIA_ENABLED
+  SetupAlquimia();
+#endif
 }
 
 
@@ -379,7 +388,7 @@ void Transport_PK::Initialize(const Teuchos::Ptr<State>& S)
   // create boundary conditions
   if (tp_list_->isSublist("boundary conditions")) {
     // -- try simple Dirichlet conditions for species
-    PK_DomainFunctionFactory<TransportDomainFunction> factory(mesh_);
+    PK_DomainFunctionFactory<TransportDomainFunction> factory(mesh_, S_);
     Teuchos::ParameterList& clist = tp_list_->sublist("boundary conditions").sublist("concentration");
 
     for (auto it = clist.begin(); it != clist.end(); ++it) {
@@ -415,6 +424,27 @@ void Transport_PK::Initialize(const Teuchos::Ptr<State>& S)
         }
       }
     }
+    // -- try geochemical Dirichlet conditions for species
+    PK_DomainFunctionFactory<TransportBoundaryFunction_Chemistry> factory2(mesh_, S_);
+    Teuchos::ParameterList& cvlist = tp_list_->sublist("boundary conditions").sublist("constraints");
+
+    for (auto it = cvlist.begin(); it != cvlist.end(); ++it) {
+      std::string name = it->first;
+      if (cvlist.isSublist(name)) {
+        Teuchos::ParameterList& spec = cvlist.sublist(name);
+        spec.set<Teuchos::RCP<AmanziChemistry::Chemistry_PK> >("chemical pk", chem_pk_);
+
+        Teuchos::RCP<TransportBoundaryFunction_Chemistry> 
+          bc = factory2.Create(spec, "boundary constraints", AmanziMesh::FACE, Kxy);
+
+        for (int i = 0; i < component_names_.size(); i++) {
+          bc->tcc_names().push_back(component_names_[i]);
+          bc->tcc_index().push_back(i);
+        }
+        bc->set_state(S_);
+        bcs_.push_back(bc);
+      }
+    }
 #ifdef ALQUIMIA_ENABLED
     // -- try geochemical conditions
     Teuchos::ParameterList& glist = tp_list_->sublist("boundary conditions").sublist("geochemical");
@@ -424,7 +454,7 @@ void Transport_PK::Initialize(const Teuchos::Ptr<State>& S)
       Teuchos::ParameterList& spec = glist.sublist(specname);
 
       Teuchos::RCP<TransportBoundaryFunction_Alquimia> 
-          bc = Teuchos::rcp(new TransportBoundaryFunction_Alquimia(spec, mesh_, chem_pk_, chem_engine_));
+          bc = Teuchos::rcp(new TransportBoundaryFunction_Alquimia(spec, mesh_, alquimia_pk_, chem_engine_));
 
       std::vector<int>& tcc_index = bc->tcc_index();
       std::vector<std::string>& tcc_names = bc->tcc_names();
@@ -447,13 +477,14 @@ void Transport_PK::Initialize(const Teuchos::Ptr<State>& S)
   time = t_physics_;
   for (int i = 0; i < bcs_.size(); i++) {
     bcs_[i]->Compute(time, time);
+    bcs_[i]->ComputeSubmodel(mesh_, tcc);
   }
 
   VV_CheckInfluxBC();
 
   // source term initialization: so far only "concentration" is available.
   if (tp_list_->isSublist("source terms")) {
-    PK_DomainFunctionFactory<TransportDomainFunction> factory(mesh_);
+    PK_DomainFunctionFactory<TransportDomainFunction> factory(mesh_, S_);
     PKUtils_CalculatePermeabilityFactorInWell(S_.ptr(), Kxy);
 
     Teuchos::ParameterList& clist = tp_list_->sublist("source terms").sublist("concentration");
@@ -499,7 +530,7 @@ void Transport_PK::Initialize(const Teuchos::Ptr<State>& S)
       Teuchos::ParameterList& spec = glist.sublist(specname);
 
       Teuchos::RCP<TransportSourceFunction_Alquimia> 
-          src = Teuchos::rcp(new TransportSourceFunction_Alquimia(spec, mesh_, chem_pk_, chem_engine_));
+          src = Teuchos::rcp(new TransportSourceFunction_Alquimia(spec, mesh_, alquimia_pk_, chem_engine_));
 
       std::vector<int>& tcc_index = src->tcc_index();
       std::vector<std::string>& tcc_names = src->tcc_names();
@@ -536,7 +567,7 @@ void Transport_PK::InitializeFields_()
   Teuchos::OSTab tab = vo_->getOSTab();
 
   // set popular default values when flow PK is off
-  InitializeField(S_.ptr(), passwd_, saturation_liquid_key_, 1.0);
+  InitializeField_(S_.ptr(), passwd_, saturation_liquid_key_, 1.0);
 
   InitializeFieldFromField_(water_content_key_, porosity_key_, false);
   InitializeFieldFromField_(prev_water_content_key_, water_content_key_, false);
@@ -547,7 +578,7 @@ void Transport_PK::InitializeFields_()
   InitializeFieldFromField_(prev_saturation_liquid_key_, saturation_liquid_key_, false);
   InitializeFieldFromField_("total_component_concentration_matrix", tcc_key_, false);
 
-  InitializeField(S_.ptr(), passwd_, "total_component_concentration_matrix_aux", 0.0);
+  InitializeField_(S_.ptr(), passwd_, "total_component_concentration_matrix_aux", 0.0);
 }
 
 
@@ -897,8 +928,7 @@ void Transport_PK::IdentifyUpwindCells()
   upwind_flux_.resize(nfaces_wghost);
   downwind_flux_.resize(nfaces_wghost);
 
-  AmanziMesh::Entity_ID_List faces, cells;
-  std::vector<int> dirs;
+  AmanziMesh::Entity_ID_List cells;
 
   // the case of fluxes that use unique face normal even if there
   // exists more than one flux on a face
@@ -912,7 +942,8 @@ void Transport_PK::IdentifyUpwindCells()
     }
     
     for (int c = 0; c < ncells_wghost; c++) {
-      mesh_->cell_get_faces_and_dirs(c, &faces, &dirs);
+      const auto& faces = mesh_->cell_get_faces(c);
+      const auto& dirs = mesh_->cell_get_face_dirs(c);
       
       for (int i = 0; i < faces.size(); i++) {
         int f = faces[i];
@@ -959,7 +990,8 @@ void Transport_PK::IdentifyUpwindCells()
   // flux (could be more than one) on a face
   } else {
     for (int c = 0; c < ncells_wghost; c++) {
-      mesh_->cell_get_faces_and_dirs(c, &faces, &dirs);
+      const auto& faces = mesh_->cell_get_faces(c);
+      const auto& dirs = mesh_->cell_get_face_dirs(c);
 
       for (int i = 0; i < faces.size(); i++) {
         int f = faces[i];

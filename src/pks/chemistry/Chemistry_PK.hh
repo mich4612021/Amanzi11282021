@@ -64,11 +64,7 @@ class Chemistry_PK : public PK_Physical {
 
   // -- output of error messages.
   void ErrorAnalysis(int ierr, std::string& internal_msg);
-  Key domain_name() {return domain_;}
   int num_aqueous_components() {return number_aqueous_components_;}
-  
- protected:
-  void InitializeField_(const Teuchos::Ptr<State>& S, std::string fieldname, double default_val);
 
  protected:
   std::string passwd_;
@@ -89,14 +85,13 @@ class Chemistry_PK : public PK_Physical {
   bool using_sorption_, using_sorption_isotherms_;
 
   int number_free_ion_, number_ion_exchange_sites_;
+  double saturation_tolerance_;
 
   // names of state fields 
   Key tcc_key_;
-  Key poro_key_;
-  Key saturation_key_;
+  Key poro_key_, saturation_key_, temperature_key_;
   Key fluid_den_key_, molar_fluid_den_key_;
-  Key min_vol_frac_key_;
-  Key min_ssa_key_;
+  Key min_vol_frac_key_, min_ssa_key_;
   Key sorp_sites_key_;
   Key surf_cfsc_key_;
   Key total_sorbed_key_;
