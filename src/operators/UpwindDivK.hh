@@ -21,20 +21,17 @@
 
 #include "CompositeVector.hh"
 #include "Mesh.hh"
+#include "Mesh_Algorithms.hh"
 #include "VerboseObject.hh"
-#include "WhetStoneMeshUtils.hh"
 
 #include "Upwind.hh"
 
 namespace Amanzi {
 namespace Operators {
 
-template<class Model>
-class UpwindDivK : public Upwind<Model> {
+class UpwindDivK : public Upwind {
  public:
-  UpwindDivK(Teuchos::RCP<const AmanziMesh::Mesh> mesh,
-                 Teuchos::RCP<const Model> model)
-      : Upwind<Model>(mesh, model) {};
+  UpwindDivK(Teuchos::RCP<const AmanziMesh::Mesh> mesh) : Upwind(mesh) {};
   ~UpwindDivK() {};
 
   // main methods
@@ -45,11 +42,6 @@ class UpwindDivK : public Upwind<Model> {
                CompositeVector& field);
 
  private:
-  using Upwind<Model>::mesh_;
-  using Upwind<Model>::model_;
-  using Upwind<Model>::face_comp_;
-
- private:
   int method_, order_;
   double tolerance_;
 };
@@ -58,8 +50,8 @@ class UpwindDivK : public Upwind<Model> {
 /* ******************************************************************
 * Public init method. It is not yet used.
 ****************************************************************** */
-template<class Model>
-void UpwindDivK<Model>::Init(Teuchos::ParameterList& plist)
+inline
+void UpwindDivK::Init(Teuchos::ParameterList& plist)
 {
   method_ = Operators::OPERATOR_UPWIND_DIVK;
   tolerance_ = plist.get<double>("tolerance", OPERATOR_UPWIND_RELATIVE_TOLERANCE);
@@ -70,8 +62,8 @@ void UpwindDivK<Model>::Init(Teuchos::ParameterList& plist)
 /* ******************************************************************
 * Flux-based upwind consistent with mimetic discretization.
 ****************************************************************** */
-template<class Model>
-void UpwindDivK<Model>::Compute(
+inline
+void UpwindDivK::Compute(
     const CompositeVector& flux, const CompositeVector& solution,
     const std::vector<int>& bc_model, CompositeVector& field)
 {
@@ -112,7 +104,7 @@ void UpwindDivK<Model>::Compute(
       // Internal faces. We average field on almost vertical faces. 
       if (bc_model[f] == OPERATOR_BC_NONE && fabs(flx_face[0][f]) <= tol) { 
         double tmp(0.5);
-        int c2 = WhetStone::cell_get_face_adj_cell(*mesh_, c, f);
+        int c2 = cell_get_face_adj_cell(*mesh_, c, f);
         if (c2 >= 0) { 
           double v1 = mesh_->cell_volume(c);
           double v2 = mesh_->cell_volume(c2);
@@ -123,13 +115,12 @@ void UpwindDivK<Model>::Compute(
       } else if (bc_model[f] == OPERATOR_BC_DIRICHLET && flag) {
         upw_face[0][f] = fld_boundary[0][ext_face_map.LID(face_map.GID(f))];
       } else if (bc_model[f] == OPERATOR_BC_NEUMANN && flag) {
-        // upw_face[0][f] = ((*model_).*Value)(c, sol_face[0][f]);
         upw_face[0][f] = kc;
       } else if (bc_model[f] == OPERATOR_BC_MIXED && flag) {
         upw_face[0][f] = kc;
       // Internal and boundary faces. 
       } else if (!flag) {
-        int c2 = WhetStone::cell_get_face_adj_cell(*mesh_, c, f);
+        int c2 = cell_get_face_adj_cell(*mesh_, c, f);
         if (c2 >= 0) {
           double kc2(fld_cell[0][c2]);
           upw_face[0][f] = std::pow(kc * (kc + kc2) / 2, 0.5);
